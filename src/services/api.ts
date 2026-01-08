@@ -14,6 +14,8 @@ import type {
   CreateRecurringRequest,
   UpcomingRecurring,
   DetectedRecurring,
+  CancelledSubscription,
+  SavingsSummary,
   SavingsGoal,
   CreateGoalRequest,
   CalendarEvent,
@@ -27,6 +29,7 @@ import type {
   BillReminder,
   EncryptionStatus,
   BackupMetadata,
+  AutoCategorizeResult,
 } from '../types';
 
 // Initialization
@@ -91,6 +94,15 @@ export const detectRecurringPatterns = () =>
 export const createRecurringFromDetected = (detected: DetectedRecurring) =>
   invoke<RecurringTransaction>('create_recurring_from_detected', { detected });
 
+export const deactivateRecurring = (id: string, reason?: string) =>
+  invoke<CancelledSubscription>('deactivate_recurring', { id, reason });
+
+export const getCancelledSubscriptions = () =>
+  invoke<CancelledSubscription[]>('get_cancelled_subscriptions');
+
+export const getSavingsSummary = () =>
+  invoke<SavingsSummary>('get_savings_summary');
+
 // Goals
 export const createGoal = (request: CreateGoalRequest) =>
   invoke<SavingsGoal>('create_goal', { request });
@@ -129,6 +141,10 @@ export const createCategoryRule = (categoryId: string, pattern: string, field?: 
   invoke<CategoryRule>('create_category_rule', { categoryId, pattern, field });
 
 export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules');
+
+// Auto-Categorize
+export const autoCategorizeTransactions = () =>
+  invoke<AutoCategorizeResult>('auto_categorize_transactions');
 
 // Notifications
 export const getBillReminders = (daysAhead?: number) =>

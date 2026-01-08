@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
-import type { CreateTransactionRequest, TransactionType } from '../types';
+import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult } from '../types';
 import { format } from 'date-fns';
+import * as api from '../services/api';
 
 const transactionsStore = useTransactionsStore();
 const accountsStore = useAccountsStore();
 const categoriesStore = useCategoriesStore();
 
 const showAddModal = ref(false);
+const showCategorizeResultModal = ref(false);
+const categorizing = ref(false);
+const categorizeResult = ref<AutoCategorizeResult | null>(null);
 const searchQuery = ref('');
 const filterAccountId = ref('');
 const filterCategoryId = ref('');
@@ -86,6 +90,30 @@ async function deleteTransaction(id: string) {
   }
 }
 
+async function autoCategorize() {
+  categorizing.value = true;
+  try {
+    const result = await api.autoCategorizeTransactions();
+    categorizeResult.value = result;
+    if (result.total_categorized > 0) {
+      // Refresh transactions to show updated categories
+      await transactionsStore.fetchTransactions();
+      showCategorizeResultModal.value = true;
+    } else {
+      alert('All transactions are already categorized. Nothing to do!');
+    }
+  } catch (e) {
+    console.error('Failed to auto-categorize:', e);
+    alert('Failed to auto-categorize transactions.');
+  } finally {
+    categorizing.value = false;
+  }
+}
+
+const uncategorizedCount = computed(() => {
+  return transactionsStore.transactions.filter(t => !t.category_id).length;
+});
+
 onMounted(async () => {
   await Promise.all([
     accountsStore.fetchAccounts(),
@@ -102,12 +130,29 @@ onMounted(async () => {
   <div class="p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Transactions</h1>
-      <button
-        @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-      >
-        Add Transaction
-      </button>
+      <div class="flex gap-3">
+        <button
+          v-if="uncategorizedCount > 0"
+          @click="autoCategorize"
+          :disabled="categorizing"
+          class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+        >
+          <svg v-if="categorizing" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+          </svg>
+          {{ categorizing ? 'Categorizing...' : `Auto-Categorize (${uncategorizedCount})` }}
+        </button>
+        <button
+          @click="showAddModal = true"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Add Transaction
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -307,6 +352,48 @@ onMounted(async () => {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Auto-Categorize Result Modal -->
+    <div
+      v-if="showCategorizeResultModal && categorizeResult"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="showCategorizeResultModal = false"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3">
+          <div class="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+            <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Categorization Complete</h3>
+        </div>
+        <div class="p-4">
+          <p class="text-gray-700 dark:text-gray-300 mb-4">
+            Successfully categorized <strong>{{ categorizeResult.total_categorized }}</strong> transactions!
+          </p>
+          <div v-if="categorizeResult.breakdown.length > 0" class="space-y-2">
+            <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400">Breakdown by category:</h4>
+            <div
+              v-for="item in categorizeResult.breakdown"
+              :key="item.category_id"
+              class="flex justify-between items-center py-2 px-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+            >
+              <span class="text-gray-900 dark:text-white">{{ item.category_name }}</span>
+              <span class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ item.count }} transactions</span>
+            </div>
+          </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+          <button
+            @click="showCategorizeResultModal = false"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Done
+          </button>
+        </div>
       </div>
     </div>
   </div>

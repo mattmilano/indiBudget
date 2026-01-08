@@ -21,6 +21,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_003_BUDGETS, 3),
         (MIGRATION_004_GOALS, 4),
         (MIGRATION_005_IMPORT_RULES, 5),
+        (MIGRATION_006_CANCELLED_SUBSCRIPTIONS, 6),
     ];
 
     for (sql, version) in migrations {
@@ -180,4 +181,20 @@ const MIGRATION_005_IMPORT_RULES: &str = r#"
     );
 
     CREATE INDEX IF NOT EXISTS idx_category_rules_category ON category_rules(category_id);
+"#;
+
+const MIGRATION_006_CANCELLED_SUBSCRIPTIONS: &str = r#"
+    CREATE TABLE IF NOT EXISTS cancelled_subscriptions (
+        id TEXT PRIMARY KEY,
+        recurring_id TEXT NOT NULL,
+        description TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        frequency TEXT NOT NULL,
+        cancelled_at TEXT NOT NULL,
+        reason TEXT,
+        estimated_yearly_savings TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cancelled_subscriptions_date ON cancelled_subscriptions(cancelled_at);
 "#;

@@ -333,3 +333,33 @@ export interface DetectedRecurring {
   account_id: string;
   category_id?: string;
 }
+
+export interface CancelledSubscription {
+  id: string;
+  recurring_id: string;
+  description: string;
+  amount: string;
+  frequency: RecurrenceFrequency;
+  cancelled_at: string;
+  reason?: string;
+  estimated_yearly_savings: string;
+  created_at: string;
+}
+
+export interface SavingsSummary {
+  total_yearly_savings: string;
+  total_monthly_savings: string;
+  cancelled_count: number;
+  cancelled_subscriptions: CancelledSubscription[];
+}
+
+export interface AutoCategorizeResult {
+  total_categorized: number;
+  breakdown: CategoryBreakdown[];
+}
+
+export interface CategoryBreakdown {
+  category_id: string;
+  category_name: string;
+  count: number;
+}

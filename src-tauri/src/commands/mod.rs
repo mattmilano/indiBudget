@@ -471,6 +471,58 @@ pub fn create_recurring_from_detected(
     })
 }
 
+#[tauri::command]
+pub fn deactivate_recurring(
+    state: State<AppState>,
+    id: String,
+    reason: Option<String>,
+) -> Result<CancelledSubscription, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            // Get the recurring transaction first
+            let recurring = repository::get_recurring_by_id(conn, &id)?;
+
+            // Create a cancelled subscription record
+            let cancelled = CancelledSubscription::from_recurring(&recurring, reason);
+            repository::create_cancelled_subscription(conn, &cancelled)?;
+
+            // Deactivate the recurring transaction
+            repository::deactivate_recurring(conn, &id)?;
+
+            Ok(cancelled)
+        })
+    })
+}
+
+#[tauri::command]
+pub fn get_cancelled_subscriptions(state: State<AppState>) -> Result<Vec<CancelledSubscription>, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_cancelled_subscriptions(conn))
+    })
+}
+
+#[tauri::command]
+pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let cancelled = repository::get_cancelled_subscriptions(conn)?;
+
+            let total_yearly: Decimal = cancelled.iter()
+                .map(|c| c.estimated_yearly_savings)
+                .sum();
+
+            let total_monthly = total_yearly / Decimal::from(12);
+
+            Ok(SavingsSummary {
+                total_yearly_savings: total_yearly,
+                total_monthly_savings: total_monthly,
+                cancelled_count: cancelled.len(),
+                cancelled_subscriptions: cancelled,
+            })
+        })
+    })
+}
+
 // Goals Commands
 #[tauri::command]
 pub fn create_goal(state: State<AppState>, request: CreateGoalRequest) -> Result<SavingsGoal, String> {
@@ -758,6 +810,78 @@ pub fn get_calendar_events(
             Ok(events)
         })
     })
+}
+
+// Auto-Categorize Command
+#[tauri::command]
+pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCategorizeResult, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            // Get all rules (user-defined + default)
+            let user_rules = repository::get_category_rules(conn)?;
+
+            // Combine with default rules, user rules take priority
+            let mut all_rules = user_rules;
+            all_rules.extend(services::categorizer::get_default_rules());
+
+            let categorizer = Categorizer::new(all_rules);
+
+            // Get all uncategorized transactions
+            let filter = TransactionFilter::default();
+            let transactions = repository::get_transactions(conn, &filter)?;
+
+            let mut categorized_count = 0;
+            let mut category_breakdown: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+            for tx in &transactions {
+                if tx.category_id.is_none() {
+                    if let Some(category_id) = categorizer.categorize(tx) {
+                        // Update the transaction with the category
+                        let mut updated_tx = tx.clone();
+                        updated_tx.category_id = Some(category_id.clone());
+                        repository::update_transaction(conn, &updated_tx)?;
+
+                        categorized_count += 1;
+                        *category_breakdown.entry(category_id).or_insert(0) += 1;
+                    }
+                }
+            }
+
+            // Get category names for the breakdown
+            let categories = repository::get_all_categories(conn)?;
+            let category_map: std::collections::HashMap<String, String> = categories
+                .into_iter()
+                .map(|c| (c.id, c.name))
+                .collect();
+
+            let breakdown: Vec<CategoryBreakdown> = category_breakdown
+                .into_iter()
+                .map(|(id, count)| CategoryBreakdown {
+                    category_id: id.clone(),
+                    category_name: category_map.get(&id).cloned().unwrap_or_default(),
+                    count,
+                })
+                .collect();
+
+            Ok(AutoCategorizeResult {
+                total_categorized: categorized_count,
+                breakdown,
+            })
+        })
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AutoCategorizeResult {
+    pub total_categorized: usize,
+    pub breakdown: Vec<CategoryBreakdown>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CategoryBreakdown {
+    pub category_id: String,
+    pub category_name: String,
+    pub count: usize,
 }
 
 // Category Rules Commands

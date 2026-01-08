@@ -442,6 +442,68 @@ pub fn update_recurring_next_occurrence(conn: &Connection, id: &str, next: Naive
     Ok(())
 }
 
+pub fn get_recurring_by_id(conn: &Connection, id: &str) -> DbResult<RecurringTransaction> {
+    conn.query_row(
+        "SELECT id, account_id, transaction_type, amount, description, category_id, payee, frequency, start_date, end_date,
+         next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at
+         FROM recurring_transactions WHERE id = ?1",
+        [id],
+        recurring_from_row,
+    )
+    .map_err(|_| DatabaseError::NotFound)
+}
+
+pub fn deactivate_recurring(conn: &Connection, id: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE recurring_transactions SET is_active = 0, updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
+}
+
+pub fn create_cancelled_subscription(conn: &Connection, cancelled: &CancelledSubscription) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO cancelled_subscriptions (id, recurring_id, description, amount, frequency, cancelled_at, reason, estimated_yearly_savings, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            cancelled.id,
+            cancelled.recurring_id,
+            cancelled.description,
+            cancelled.amount.to_string(),
+            cancelled.frequency.as_str(),
+            cancelled.cancelled_at.format("%Y-%m-%d").to_string(),
+            cancelled.reason,
+            cancelled.estimated_yearly_savings.to_string(),
+            cancelled.created_at.to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_cancelled_subscriptions(conn: &Connection) -> DbResult<Vec<CancelledSubscription>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, recurring_id, description, amount, frequency, cancelled_at, reason, estimated_yearly_savings, created_at
+         FROM cancelled_subscriptions ORDER BY cancelled_at DESC",
+    )?;
+    let cancelled = stmt
+        .query_map([], |row| {
+            Ok(CancelledSubscription {
+                id: row.get(0)?,
+                recurring_id: row.get(1)?,
+                description: row.get(2)?,
+                amount: parse_decimal(&row.get::<_, String>(3)?),
+                frequency: RecurrenceFrequency::from_str(&row.get::<_, String>(4)?),
+                cancelled_at: parse_date(&row.get::<_, String>(5)?),
+                reason: row.get(6)?,
+                estimated_yearly_savings: parse_decimal(&row.get::<_, String>(7)?),
+                created_at: parse_datetime(&row.get::<_, String>(8)?),
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(cancelled)
+}
+
 // Goals Repository
 pub fn create_goal(conn: &Connection, goal: &SavingsGoal) -> DbResult<()> {
     conn.execute(

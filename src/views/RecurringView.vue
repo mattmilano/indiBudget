@@ -2,17 +2,21 @@
 import { ref, onMounted } from 'vue';
 import * as api from '../services/api';
 import { useAccountsStore, useCategoriesStore } from '../stores';
-import type { RecurringTransaction, DetectedRecurring, CreateRecurringRequest } from '../types';
+import type { RecurringTransaction, DetectedRecurring, CreateRecurringRequest, SavingsSummary } from '../types';
 
 const accountsStore = useAccountsStore();
 const categoriesStore = useCategoriesStore();
 
 const recurring = ref<RecurringTransaction[]>([]);
 const detectedPatterns = ref<DetectedRecurring[]>([]);
+const savingsSummary = ref<SavingsSummary | null>(null);
 const loading = ref(false);
 const detectingPatterns = ref(false);
 const showAddModal = ref(false);
 const showDetectedModal = ref(false);
+const showCancelModal = ref(false);
+const cancellingItem = ref<RecurringTransaction | null>(null);
+const cancelReason = ref('');
 
 const newRecurring = ref<CreateRecurringRequest>({
   account_id: '',
@@ -29,6 +33,7 @@ onMounted(async () => {
     accountsStore.fetchAccounts(),
     categoriesStore.fetchCategories(),
     fetchRecurring(),
+    fetchSavingsSummary(),
   ]);
   loading.value = false;
 });
@@ -38,6 +43,14 @@ async function fetchRecurring() {
     recurring.value = await api.getRecurring();
   } catch (e) {
     console.error('Failed to fetch recurring:', e);
+  }
+}
+
+async function fetchSavingsSummary() {
+  try {
+    savingsSummary.value = await api.getSavingsSummary();
+  } catch (e) {
+    console.error('Failed to fetch savings summary:', e);
   }
 }
 
@@ -96,6 +109,32 @@ async function createRecurring() {
   }
 }
 
+function openCancelModal(item: RecurringTransaction) {
+  cancellingItem.value = item;
+  cancelReason.value = '';
+  showCancelModal.value = true;
+}
+
+async function confirmCancel() {
+  if (!cancellingItem.value) return;
+
+  try {
+    await api.deactivateRecurring(cancellingItem.value.id, cancelReason.value || undefined);
+    showCancelModal.value = false;
+    cancellingItem.value = null;
+    cancelReason.value = '';
+
+    // Refresh both recurring list and savings summary
+    await Promise.all([
+      fetchRecurring(),
+      fetchSavingsSummary(),
+    ]);
+  } catch (e) {
+    console.error('Failed to cancel recurring:', e);
+    alert('Failed to cancel the subscription.');
+  }
+}
+
 function formatAmount(amount: string): string {
   const num = parseFloat(amount);
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(num));
@@ -138,6 +177,20 @@ function getConfidenceLabel(confidence: number): string {
   if (confidence >= 0.6) return 'Medium';
   return 'Low';
 }
+
+function calculateYearlySavings(amount: string, frequency: string): string {
+  const num = Math.abs(parseFloat(amount));
+  const multipliers: Record<string, number> = {
+    daily: 365,
+    weekly: 52,
+    biweekly: 26,
+    monthly: 12,
+    quarterly: 4,
+    yearly: 1,
+  };
+  const yearly = num * (multipliers[frequency] || 12);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(yearly);
+}
 </script>
 
 <template>
@@ -171,6 +224,43 @@ function getConfidenceLabel(confidence: number): string {
       </div>
     </div>
 
+    <!-- Savings Summary Card -->
+    <div v-if="savingsSummary && savingsSummary.cancelled_count > 0" class="mb-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold opacity-90">Your Savings from Cancelled Subscriptions</h2>
+          <div class="mt-2 flex items-baseline gap-6">
+            <div>
+              <span class="text-3xl font-bold">{{ formatAmount(savingsSummary.total_monthly_savings) }}</span>
+              <span class="text-sm opacity-75">/month</span>
+            </div>
+            <div>
+              <span class="text-2xl font-semibold">{{ formatAmount(savingsSummary.total_yearly_savings) }}</span>
+              <span class="text-sm opacity-75">/year</span>
+            </div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-4xl font-bold">{{ savingsSummary.cancelled_count }}</div>
+          <div class="text-sm opacity-75">subscriptions cancelled</div>
+        </div>
+      </div>
+
+      <!-- Recent Cancellations -->
+      <div v-if="savingsSummary.cancelled_subscriptions.length > 0" class="mt-4 pt-4 border-t border-white/20">
+        <h3 class="text-sm font-medium opacity-75 mb-2">Recently Cancelled</h3>
+        <div class="flex flex-wrap gap-2">
+          <div
+            v-for="cancelled in savingsSummary.cancelled_subscriptions.slice(0, 5)"
+            :key="cancelled.id"
+            class="px-3 py-1 bg-white/20 rounded-full text-sm"
+          >
+            {{ cancelled.description }} - {{ formatAmount(cancelled.estimated_yearly_savings) }}/yr
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading -->
     <div v-if="loading" class="flex justify-center py-12">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -186,6 +276,7 @@ function getConfidenceLabel(confidence: number): string {
             <th class="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Frequency</th>
             <th class="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Next Due</th>
             <th class="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Account</th>
+            <th class="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -210,6 +301,15 @@ function getConfidenceLabel(confidence: number): string {
             <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
               {{ getAccountName(item.account_id) }}
             </td>
+            <td class="px-4 py-3 text-right">
+              <button
+                @click="openCancelModal(item)"
+                class="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                title="Cancel this subscription"
+              >
+                Cancel
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -225,6 +325,58 @@ function getConfidenceLabel(confidence: number): string {
         Click "Detect Patterns" to automatically find recurring transactions from your history,<br>
         or add them manually.
       </p>
+    </div>
+
+    <!-- Cancel Subscription Modal -->
+    <div v-if="showCancelModal && cancellingItem" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Cancel Subscription</h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <p class="text-gray-700 dark:text-gray-300">
+            Are you sure you want to cancel <strong>{{ cancellingItem.description }}</strong>?
+          </p>
+
+          <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <div class="flex items-center gap-2 text-green-700 dark:text-green-400">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span class="font-medium">Estimated yearly savings:</span>
+            </div>
+            <div class="mt-1 text-2xl font-bold text-green-700 dark:text-green-400">
+              {{ calculateYearlySavings(cancellingItem.amount, cancellingItem.frequency) }}
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Reason for cancelling (optional)
+            </label>
+            <input
+              v-model="cancelReason"
+              type="text"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              placeholder="e.g., Found a better alternative"
+            />
+          </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+          <button
+            @click="showCancelModal = false"
+            class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Keep Subscription
+          </button>
+          <button
+            @click="confirmCancel"
+            class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Cancel Subscription
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Detected Patterns Modal -->

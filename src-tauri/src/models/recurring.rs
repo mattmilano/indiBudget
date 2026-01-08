@@ -188,3 +188,54 @@ pub struct UpcomingRecurring {
     pub category_name: Option<String>,
     pub account_name: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelledSubscription {
+    pub id: String,
+    pub recurring_id: String,
+    pub description: String,
+    pub amount: Decimal,
+    pub frequency: RecurrenceFrequency,
+    pub cancelled_at: NaiveDate,
+    pub reason: Option<String>,
+    pub estimated_yearly_savings: Decimal,
+    pub created_at: DateTime<Utc>,
+}
+
+impl CancelledSubscription {
+    pub fn from_recurring(recurring: &RecurringTransaction, reason: Option<String>) -> Self {
+        let yearly_savings = Self::calculate_yearly_savings(&recurring.frequency, recurring.amount);
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            recurring_id: recurring.id.clone(),
+            description: recurring.description.clone(),
+            amount: recurring.amount,
+            frequency: recurring.frequency.clone(),
+            cancelled_at: now.date_naive(),
+            reason,
+            estimated_yearly_savings: yearly_savings,
+            created_at: now,
+        }
+    }
+
+    pub fn calculate_yearly_savings(frequency: &RecurrenceFrequency, amount: Decimal) -> Decimal {
+        let multiplier = match frequency {
+            RecurrenceFrequency::Daily => Decimal::from(365),
+            RecurrenceFrequency::Weekly => Decimal::from(52),
+            RecurrenceFrequency::Biweekly => Decimal::from(26),
+            RecurrenceFrequency::Monthly => Decimal::from(12),
+            RecurrenceFrequency::Quarterly => Decimal::from(4),
+            RecurrenceFrequency::Yearly => Decimal::from(1),
+        };
+        amount.abs() * multiplier
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavingsSummary {
+    pub total_yearly_savings: Decimal,
+    pub total_monthly_savings: Decimal,
+    pub cancelled_count: usize,
+    pub cancelled_subscriptions: Vec<CancelledSubscription>,
+}

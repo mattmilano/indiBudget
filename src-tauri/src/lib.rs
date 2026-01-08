@@ -44,6 +44,9 @@ pub fn run() {
             commands::get_upcoming_recurring,
             commands::detect_recurring_patterns,
             commands::create_recurring_from_detected,
+            commands::deactivate_recurring,
+            commands::get_cancelled_subscriptions,
+            commands::get_savings_summary,
             // Goals
             commands::create_goal,
             commands::get_goals,
@@ -58,9 +61,10 @@ pub fn run() {
             commands::get_cash_flow_report,
             // Calendar
             commands::get_calendar_events,
-            // Category Rules
+            // Category Rules & Auto-Categorize
             commands::create_category_rule,
             commands::get_category_rules,
+            commands::auto_categorize_transactions,
             // Notifications
             commands::get_bill_reminders,
             commands::send_bill_notification,
