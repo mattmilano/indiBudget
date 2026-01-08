@@ -42,6 +42,8 @@ pub fn run() {
             commands::create_recurring,
             commands::get_recurring,
             commands::get_upcoming_recurring,
+            commands::detect_recurring_patterns,
+            commands::create_recurring_from_detected,
             // Goals
             commands::create_goal,
             commands::get_goals,

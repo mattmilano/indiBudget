@@ -318,3 +318,18 @@ export interface BackupMetadata {
   transaction_count: number;
   category_count: number;
 }
+
+export interface DetectedRecurring {
+  description: string;
+  payee?: string;
+  frequency: RecurrenceFrequency;
+  average_amount: string;
+  amount_is_consistent: boolean;
+  transaction_type: TransactionType;
+  occurrence_count: number;
+  occurrence_dates: string[];
+  typical_day_of_month?: number;
+  confidence: number;
+  account_id: string;
+  category_id?: string;
+}

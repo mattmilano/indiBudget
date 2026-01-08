@@ -13,6 +13,7 @@ import type {
   RecurringTransaction,
   CreateRecurringRequest,
   UpcomingRecurring,
+  DetectedRecurring,
   SavingsGoal,
   CreateGoalRequest,
   CalendarEvent,
@@ -83,6 +84,12 @@ export const getRecurring = () => invoke<RecurringTransaction[]>('get_recurring'
 
 export const getUpcomingRecurring = (days?: number) =>
   invoke<UpcomingRecurring[]>('get_upcoming_recurring', { days });
+
+export const detectRecurringPatterns = () =>
+  invoke<DetectedRecurring[]>('detect_recurring_patterns');
+
+export const createRecurringFromDetected = (detected: DetectedRecurring) =>
+  invoke<RecurringTransaction>('create_recurring_from_detected', { detected });
 
 // Goals
 export const createGoal = (request: CreateGoalRequest) =>

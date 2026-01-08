@@ -386,6 +386,91 @@ pub fn get_upcoming_recurring(state: State<AppState>, days: Option<i32>) -> Resu
     })
 }
 
+#[tauri::command]
+pub fn detect_recurring_patterns(state: State<AppState>) -> Result<Vec<services::recurring_detector::DetectedRecurring>, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            // Get all transactions
+            let transactions = repository::get_transactions(conn, &TransactionFilter::default())?;
+
+            // Detect recurring patterns
+            let detected = services::recurring_detector::detect_recurring_transactions(&transactions);
+
+            Ok(detected)
+        })
+    })
+}
+
+#[tauri::command]
+pub fn create_recurring_from_detected(
+    state: State<AppState>,
+    detected: services::recurring_detector::DetectedRecurring,
+) -> Result<RecurringTransaction, String> {
+    let today = chrono::Utc::now().date_naive();
+
+    with_db(&state, |db| {
+        // Calculate next occurrence based on typical day of month or last occurrence
+        let next_occurrence = if let Some(day) = detected.typical_day_of_month {
+            // Use the typical day of month, in the current or next month
+            let current_month_date = today.with_day(day.min(28)).unwrap_or(today);
+            if current_month_date > today {
+                current_month_date
+            } else {
+                // Move to next month
+                if today.month() == 12 {
+                    chrono::NaiveDate::from_ymd_opt(today.year() + 1, 1, day.min(28))
+                } else {
+                    chrono::NaiveDate::from_ymd_opt(today.year(), today.month() + 1, day.min(28))
+                }.unwrap_or(today)
+            }
+        } else if let Some(&last_date) = detected.occurrence_dates.last() {
+            // Calculate based on frequency from last occurrence
+            match detected.frequency {
+                RecurrenceFrequency::Weekly => last_date + chrono::Duration::days(7),
+                RecurrenceFrequency::Biweekly => last_date + chrono::Duration::days(14),
+                RecurrenceFrequency::Monthly => {
+                    if last_date.month() == 12 {
+                        chrono::NaiveDate::from_ymd_opt(last_date.year() + 1, 1, last_date.day())
+                    } else {
+                        chrono::NaiveDate::from_ymd_opt(last_date.year(), last_date.month() + 1, last_date.day())
+                    }.unwrap_or(last_date + chrono::Duration::days(30))
+                },
+                RecurrenceFrequency::Quarterly => last_date + chrono::Duration::days(91),
+                RecurrenceFrequency::Yearly => {
+                    chrono::NaiveDate::from_ymd_opt(last_date.year() + 1, last_date.month(), last_date.day())
+                        .unwrap_or(last_date + chrono::Duration::days(365))
+                },
+                _ => last_date + chrono::Duration::days(30),
+            }
+        } else {
+            today
+        };
+
+        // Use first occurrence as start date
+        let start_date = detected.occurrence_dates.first().copied().unwrap_or(today);
+
+        let mut recurring = RecurringTransaction::new(
+            detected.account_id,
+            detected.transaction_type,
+            detected.average_amount,
+            detected.description,
+            detected.frequency,
+            start_date,
+        );
+
+        recurring.next_occurrence = next_occurrence;
+        recurring.category_id = detected.category_id;
+        recurring.payee = detected.payee;
+        recurring.day_of_month = detected.typical_day_of_month.map(|d| d as i32);
+        recurring.reminder_days = Some(3);
+
+        db.with_connection(|conn| {
+            repository::create_recurring(conn, &recurring)?;
+            Ok(recurring)
+        })
+    })
+}
+
 // Goals Commands
 #[tauri::command]
 pub fn create_goal(state: State<AppState>, request: CreateGoalRequest) -> Result<SavingsGoal, String> {
