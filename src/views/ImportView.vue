@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useAccountsStore } from '../stores';
+import { useAccountsStore, useTransactionsStore } from '../stores';
 import * as api from '../services/api';
 import type { ImportMapping, RawTransaction, ImportResult } from '../types';
 
+const router = useRouter();
 const accountsStore = useAccountsStore();
+const transactionsStore = useTransactionsStore();
 
 const selectedFile = ref<string | null>(null);
 const selectedAccountId = ref('');
@@ -150,12 +153,18 @@ async function performImport() {
       mappingToSend
     );
     step.value = 'result';
+    // Refresh the transactions store so other views see the imported data
+    await transactionsStore.fetchTransactions();
   } catch (e) {
     console.error('Failed to import:', e);
     errorMessage.value = `Failed to import: ${e}`;
   } finally {
     loading.value = false;
   }
+}
+
+function viewTransactions() {
+  router.push('/transactions');
 }
 
 function resetImport() {
@@ -402,12 +411,20 @@ onMounted(() => {
           </div>
         </div>
 
-        <button
-          @click="resetImport"
-          class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Import Another File
-        </button>
+        <div class="flex justify-center gap-4">
+          <button
+            @click="viewTransactions"
+            class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            View Transactions
+          </button>
+          <button
+            @click="resetImport"
+            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Import Another File
+          </button>
+        </div>
       </div>
     </div>
   </div>
