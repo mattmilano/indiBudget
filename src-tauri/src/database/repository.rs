@@ -253,8 +253,6 @@ pub fn get_transactions(conn: &Connection, filter: &TransactionFilter) -> DbResu
     sql.push_str(" ORDER BY date DESC, created_at DESC");
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut param_idx = 0;
-
     let rows = stmt.query_map([], |row| transaction_from_row(row))?;
 
     let transactions: Vec<Transaction> = rows

@@ -44,11 +44,7 @@
       "all": true,
       "scope": ["$APPDATA", "$APPDATA/**", "$HOME/**", "$DOWNLOAD/**"]
     },
-    "dialog": {
-      "all": true
-    },
-    "notification": {
-      "all": true
-    }
+    "dialog": {},
+    "notification": {}
   }
 }
