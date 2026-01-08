@@ -13,6 +13,7 @@ const columns = ref<string[]>([]);
 const previewData = ref<RawTransaction[]>([]);
 const importResult = ref<ImportResult | null>(null);
 const loading = ref(false);
+const errorMessage = ref('');
 const step = ref<'select' | 'map' | 'preview' | 'result'>('select');
 
 const mapping = ref<ImportMapping>({
@@ -69,6 +70,7 @@ async function selectFile() {
       }
     } catch (e) {
       console.error('Failed to detect columns:', e);
+      errorMessage.value = `Failed to read file: ${e}`;
     } finally {
       loading.value = false;
     }
@@ -122,16 +124,21 @@ async function previewImport() {
     step.value = 'preview';
   } catch (e) {
     console.error('Failed to preview import:', e);
+    errorMessage.value = `Failed to preview: ${e}`;
   } finally {
     loading.value = false;
   }
 }
 
 async function performImport() {
-  if (!selectedFile.value || !selectedAccountId.value) return;
+  if (!selectedFile.value || !selectedAccountId.value) {
+    errorMessage.value = 'Please select a file and account first';
+    return;
+  }
 
   try {
     loading.value = true;
+    errorMessage.value = '';
     const mappingToSend = { ...mapping.value };
     if (!useSeparateColumns.value) {
       mappingToSend.debit_column = undefined;
@@ -145,6 +152,7 @@ async function performImport() {
     step.value = 'result';
   } catch (e) {
     console.error('Failed to import:', e);
+    errorMessage.value = `Failed to import: ${e}`;
   } finally {
     loading.value = false;
   }
@@ -155,6 +163,7 @@ function resetImport() {
   columns.value = [];
   previewData.value = [];
   importResult.value = null;
+  errorMessage.value = '';
   step.value = 'select';
   isAutoFormat.value = false;
   mapping.value = {
@@ -178,6 +187,12 @@ onMounted(() => {
 <template>
   <div class="p-6">
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Import Transactions</h1>
+
+    <!-- Error Message -->
+    <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+      <p class="text-red-700 dark:text-red-400">{{ errorMessage }}</p>
+      <button @click="errorMessage = ''" class="mt-2 text-sm text-red-600 dark:text-red-500 underline">Dismiss</button>
+    </div>
 
     <!-- Step 1: Select File -->
     <div v-if="step === 'select'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">

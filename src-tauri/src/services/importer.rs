@@ -29,12 +29,16 @@ pub enum ImportError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ImportMapping {
     pub date_column: String,
     pub description_column: String,
     pub amount_column: String,
+    #[serde(default)]
     pub debit_column: Option<String>,
+    #[serde(default)]
     pub credit_column: Option<String>,
+    #[serde(default)]
     pub category_column: Option<String>,
     pub date_format: String,
     pub has_header: bool,
