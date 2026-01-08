@@ -71,7 +71,7 @@ export const createBudget = (request: CreateBudgetRequest) =>
 export const getBudgets = () => invoke<Budget[]>('get_budgets');
 
 export const getBudgetStatus = (asOfDate?: string) =>
-  invoke<BudgetStatus[]>('get_budget_status', { asOfDate });
+  invoke<BudgetStatus[]>('get_budget_status', { as_of_date: asOfDate });
 
 // Recurring Transactions
 export const createRecurring = (request: CreateRecurringRequest) =>
@@ -99,37 +99,37 @@ export const previewImport = (path: string, mapping: ImportMapping) =>
   invoke<RawTransaction[]>('preview_import', { path, mapping });
 
 export const importTransactions = (path: string, accountId: string, mapping: ImportMapping) =>
-  invoke<ImportResult>('import_transactions', { path, accountId, mapping });
+  invoke<ImportResult>('import_transactions', { path, account_id: accountId, mapping });
 
 // Reports
 export const getSpendingByCategory = (startDate?: string, endDate?: string) =>
-  invoke<SpendingByCategory[]>('get_spending_by_category', { startDate, endDate });
+  invoke<SpendingByCategory[]>('get_spending_by_category', { start_date: startDate, end_date: endDate });
 
 export const getMonthlyTrends = (months?: number) =>
   invoke<MonthlyTrend[]>('get_monthly_trends', { months });
 
 export const getCashFlowReport = (startDate: string, endDate: string) =>
-  invoke<CashFlowReport>('get_cash_flow_report', { startDate, endDate });
+  invoke<CashFlowReport>('get_cash_flow_report', { start_date: startDate, end_date: endDate });
 
 // Calendar
 export const getCalendarEvents = (startDate: string, endDate: string) =>
-  invoke<CalendarEvent[]>('get_calendar_events', { startDate, endDate });
+  invoke<CalendarEvent[]>('get_calendar_events', { start_date: startDate, end_date: endDate });
 
 // Category Rules
 export const createCategoryRule = (categoryId: string, pattern: string, field?: string) =>
-  invoke<CategoryRule>('create_category_rule', { categoryId, pattern, field });
+  invoke<CategoryRule>('create_category_rule', { category_id: categoryId, pattern, field });
 
 export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules');
 
 // Notifications
 export const getBillReminders = (daysAhead?: number) =>
-  invoke<BillReminder[]>('get_bill_reminders', { daysAhead });
+  invoke<BillReminder[]>('get_bill_reminders', { days_ahead: daysAhead });
 
 export const sendBillNotification = (title: string, body: string) =>
   invoke<void>('send_bill_notification', { title, body });
 
 export const checkAndSendNotifications = (daysBefore: number, showAmount: boolean) =>
-  invoke<number>('check_and_send_notifications', { daysBefore, showAmount });
+  invoke<number>('check_and_send_notifications', { days_before: daysBefore, show_amount: showAmount });
 
 // Encryption
 export const getEncryptionStatus = () =>
@@ -148,7 +148,7 @@ export const lockEncryption = () =>
   invoke<void>('lock_encryption');
 
 export const changeEncryptionPassword = (oldPassword: string, newPassword: string) =>
-  invoke<void>('change_encryption_password', { oldPassword, newPassword });
+  invoke<void>('change_encryption_password', { old_password: oldPassword, new_password: newPassword });
 
 // Backup
 export const exportBackup = (path: string) =>
