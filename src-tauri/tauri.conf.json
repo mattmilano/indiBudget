@@ -39,10 +39,5 @@
     "shortDescription": "Personal budget application",
     "longDescription": "A calendar-focused personal budget application for tracking income, expenses, and financial goals."
   },
-  "plugins": {
-    "fs": {
-      "all": true,
-      "scope": ["$APPDATA", "$APPDATA/**", "$HOME/**", "$DOWNLOAD/**"]
-    }
-  }
+  "plugins": {}
 }
