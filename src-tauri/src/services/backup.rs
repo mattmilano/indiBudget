@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use crate::database::{repository, Database};
+use crate::database::{repository, Database, DatabaseError};
 
 #[derive(Error, Debug)]
 pub enum BackupError {
@@ -18,6 +18,12 @@ pub enum BackupError {
     InvalidBackup(String),
     #[error("Version mismatch: expected {expected}, got {got}")]
     VersionMismatch { expected: String, got: String },
+}
+
+impl From<DatabaseError> for BackupError {
+    fn from(e: DatabaseError) -> Self {
+        BackupError::Database(e.to_string())
+    }
 }
 
 const BACKUP_VERSION: &str = "1.0";
@@ -45,24 +51,17 @@ pub struct BackupData {
 }
 
 pub fn create_backup(db: &Database) -> Result<BackupData, BackupError> {
-    db.with_connection(|conn| {
-        let accounts = repository::get_all_accounts(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
+    let result = db.with_connection(|conn| {
+        let accounts = repository::get_all_accounts(conn)?;
         let transactions = repository::get_transactions(
             conn,
             &crate::models::TransactionFilter::default(),
-        )
-        .map_err(|e| BackupError::Database(e.to_string()))?;
-        let categories = repository::get_all_categories(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
-        let budgets = repository::get_all_budgets(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
-        let recurring = repository::get_all_recurring(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
-        let goals = repository::get_all_goals(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
-        let category_rules = repository::get_category_rules(conn)
-            .map_err(|e| BackupError::Database(e.to_string()))?;
+        )?;
+        let categories = repository::get_all_categories(conn)?;
+        let budgets = repository::get_all_budgets(conn)?;
+        let recurring = repository::get_all_recurring(conn)?;
+        let goals = repository::get_all_goals(conn)?;
+        let category_rules = repository::get_category_rules(conn)?;
 
         let metadata = BackupMetadata {
             version: BACKUP_VERSION.to_string(),
@@ -104,7 +103,9 @@ pub fn create_backup(db: &Database) -> Result<BackupData, BackupError> {
                 .map(|r| serde_json::to_value(r).unwrap())
                 .collect(),
         })
-    })
+    });
+
+    result.map_err(BackupError::from)
 }
 
 pub fn export_backup_to_file(db: &Database, path: &Path) -> Result<BackupMetadata, BackupError> {
@@ -131,7 +132,7 @@ pub fn import_backup_from_file(db: &Database, path: &Path) -> Result<BackupMetad
 
     let metadata = backup.metadata.clone();
 
-    db.with_connection(|conn| {
+    let result = db.with_connection(|conn| {
         // Import categories first (other data may reference them)
         for cat_json in &backup.categories {
             if let Ok(cat) = serde_json::from_value::<crate::models::Category>(cat_json.clone()) {
@@ -188,8 +189,11 @@ pub fn import_backup_from_file(db: &Database, path: &Path) -> Result<BackupMetad
             }
         }
 
-        Ok(metadata)
-    })
+        Ok(())
+    });
+
+    result.map_err(BackupError::from)?;
+    Ok(metadata)
 }
 
 pub fn get_backup_info(path: &Path) -> Result<BackupMetadata, BackupError> {

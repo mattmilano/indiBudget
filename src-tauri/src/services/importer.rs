@@ -176,7 +176,7 @@ pub fn import_csv(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransac
 
 pub fn import_excel(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
     let mut workbook: Xlsx<_> =
-        open_workbook(path).map_err(|e| ImportError::Excel(e.to_string()))?;
+        open_workbook(path).map_err(|e: calamine::XlsxError| ImportError::Excel(e.to_string()))?;
 
     let sheet_name = workbook
         .sheet_names()

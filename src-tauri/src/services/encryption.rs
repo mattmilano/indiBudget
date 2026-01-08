@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
 };
-use argon2::{self, Config, Variant, Version};
+use argon2::{Argon2, Algorithm, Params, Version};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -239,22 +239,18 @@ impl EncryptionService {
 }
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE], EncryptionError> {
-    let config = Config {
-        variant: Variant::Argon2id,
-        version: Version::Version13,
-        mem_cost: 65536,  // 64 MB
-        time_cost: 3,
-        lanes: 4,
-        secret: &[],
-        ad: &[],
-        hash_length: KEY_SIZE as u32,
-    };
+    let params = Params::new(
+        65536,  // 64 MB memory
+        3,      // 3 iterations
+        4,      // 4 parallel lanes
+        Some(KEY_SIZE),
+    ).map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
 
-    let hash = argon2::hash_raw(password.as_bytes(), salt, &config)
-        .map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
     let mut key = [0u8; KEY_SIZE];
-    key.copy_from_slice(&hash);
+    argon2.hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
 
     Ok(key)
 }

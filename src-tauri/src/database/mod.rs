@@ -18,6 +18,8 @@ pub enum DatabaseError {
     NotFound,
     #[error("Invalid data: {0}")]
     InvalidData(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type DbResult<T> = Result<T, DatabaseError>;

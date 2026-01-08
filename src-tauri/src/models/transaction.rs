@@ -147,7 +147,7 @@ pub struct SplitTransaction {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TransactionFilter {
     pub account_ids: Option<Vec<String>>,
     pub category_ids: Option<Vec<String>>,
