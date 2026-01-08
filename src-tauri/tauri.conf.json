@@ -43,8 +43,6 @@
     "fs": {
       "all": true,
       "scope": ["$APPDATA", "$APPDATA/**", "$HOME/**", "$DOWNLOAD/**"]
-    },
-    "dialog": {},
-    "notification": {}
+    }
   }
 }
