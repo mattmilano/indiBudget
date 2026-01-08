@@ -50,6 +50,23 @@ pub fn init_app(state: State<AppState>) -> Result<(), String> {
     state.init_database()
 }
 
+#[tauri::command]
+pub fn get_database_path() -> String {
+    database::get_database_path().to_string_lossy().to_string()
+}
+
+#[tauri::command]
+pub fn get_transaction_count(state: State<AppState>) -> Result<i32, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let count: i32 = conn
+                .query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
+                .map_err(|e| crate::database::DatabaseError::Sqlite(e))?;
+            Ok(count)
+        })
+    })
+}
+
 // Account Commands
 #[tauri::command]
 pub fn create_account(state: State<AppState>, request: CreateAccountRequest) -> Result<Account, String> {

@@ -17,6 +17,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Initialization
             commands::init_app,
+            commands::get_database_path,
+            commands::get_transaction_count,
             // Accounts
             commands::create_account,
             commands::get_accounts,

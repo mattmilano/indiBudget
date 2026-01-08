@@ -30,6 +30,8 @@ import type {
 
 // Initialization
 export const initApp = () => invoke<void>('init_app');
+export const getDatabasePath = () => invoke<string>('get_database_path');
+export const getTransactionCount = () => invoke<number>('get_transaction_count');
 
 // Accounts
 export const createAccount = (request: CreateAccountRequest) =>

@@ -45,6 +45,10 @@ const backupError = ref('');
 const isBackupLoading = ref(false);
 const lastBackupInfo = ref<BackupMetadata | null>(null);
 
+// Debug info
+const databasePath = ref('');
+const transactionCount = ref(0);
+
 onMounted(async () => {
   // Load saved settings from localStorage
   const saved = localStorage.getItem('indibudget-settings');
@@ -65,6 +69,14 @@ onMounted(async () => {
     encryptionStatus.value = await api.getEncryptionStatus();
   } catch (e) {
     console.error('Failed to get encryption status:', e);
+  }
+
+  // Load debug info
+  try {
+    databasePath.value = await api.getDatabasePath();
+    transactionCount.value = await api.getTransactionCount();
+  } catch (e) {
+    console.error('Failed to get debug info:', e);
   }
 });
 
@@ -687,6 +699,17 @@ async function changeEncryptionPassword() {
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
             Open source software - contributions welcome!
           </p>
+
+          <!-- Debug Info -->
+          <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Debug Info</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-mono break-all">
+              Database: {{ databasePath }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Transactions in DB: {{ transactionCount }}
+            </p>
+          </div>
         </div>
       </div>
 
