@@ -1,0 +1,45 @@
+{
+  "name": "indibudget",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Personal budget application with calendar-focused expense tracking",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-notification": "^2",
+    "vue-router": "^4.4.0",
+    "pinia": "^2.2.0",
+    "@fullcalendar/core": "^6.1.15",
+    "@fullcalendar/vue3": "^6.1.15",
+    "@fullcalendar/daygrid": "^6.1.15",
+    "@fullcalendar/timegrid": "^6.1.15",
+    "@fullcalendar/interaction": "^6.1.15",
+    "@fullcalendar/list": "^6.1.15",
+    "chart.js": "^4.4.0",
+    "vue-chartjs": "^5.3.0",
+    "date-fns": "^3.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vue-tsc": "^2.1.10",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^20.14.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4"
+  }
+}
