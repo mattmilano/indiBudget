@@ -836,7 +836,7 @@ pub fn export_backup(state: State<AppState>, path: String) -> Result<services::b
 
     with_db(&state, |db| {
         services::backup::export_backup_to_file(db, &path_buf)
-            .map_err(|e| crate::database::DbError::Other(e.to_string()))
+            .map_err(|e| crate::database::DatabaseError::Other(e.to_string()))
     })
 }
 
@@ -846,7 +846,7 @@ pub fn import_backup(state: State<AppState>, path: String) -> Result<services::b
 
     with_db(&state, |db| {
         services::backup::import_backup_from_file(db, &path_buf)
-            .map_err(|e| crate::database::DbError::Other(e.to_string()))
+            .map_err(|e| crate::database::DatabaseError::Other(e.to_string()))
     })
 }
 

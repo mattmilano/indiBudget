@@ -198,7 +198,7 @@ pub fn import_excel(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTrans
 
         if mapping.has_header && row_idx == mapping.skip_rows {
             for (col_idx, cell) in row.iter().enumerate() {
-                if let Some(val) = cell.get_string() {
+                if let Some(val) = cell.as_string() {
                     headers.insert(val.to_lowercase(), col_idx);
                 }
             }
