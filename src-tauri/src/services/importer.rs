@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 
 use calamine::{open_workbook, Reader, Xlsx};
 use chrono::NaiveDate;
+use regex::Regex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -331,10 +333,25 @@ pub fn preview_import(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTra
     let raw_transactions = match format {
         "csv" => import_csv(path, mapping)?,
         "excel" => import_excel(path, mapping)?,
+        "ofx" => import_ofx(path)?,
+        "qif" => import_qif(path)?,
         _ => return Err(ImportError::UnsupportedFormat(format.to_string())),
     };
 
     Ok(raw_transactions.into_iter().take(10).collect())
+}
+
+/// Import transactions from any supported format
+pub fn import_file(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
+    let format = detect_file_format(path)?;
+
+    match format {
+        "csv" => import_csv(path, mapping),
+        "excel" => import_excel(path, mapping),
+        "ofx" => import_ofx(path),
+        "qif" => import_qif(path),
+        _ => Err(ImportError::UnsupportedFormat(format.to_string())),
+    }
 }
 
 pub fn detect_csv_columns(path: &Path) -> Result<Vec<String>, ImportError> {
@@ -343,4 +360,282 @@ pub fn detect_csv_columns(path: &Path) -> Result<Vec<String>, ImportError> {
     let headers: Vec<String> = reader.headers()?.iter().map(String::from).collect();
 
     Ok(headers)
+}
+
+/// Import transactions from OFX/QFX file format
+/// OFX (Open Financial Exchange) is a standard format used by banks
+pub fn import_ofx(path: &Path) -> Result<Vec<RawTransaction>, ImportError> {
+    let content = fs::read_to_string(path)?;
+    let mut transactions = Vec::new();
+
+    // OFX can be SGML or XML format - we need to handle both
+    // Convert SGML-style OFX to parseable format
+    let content = normalize_ofx(&content);
+
+    // Extract all STMTTRN (statement transaction) blocks
+    let stmttrn_regex = Regex::new(r"<STMTTRN>([\s\S]*?)</STMTTRN>")
+        .map_err(|e| ImportError::Parse(e.to_string()))?;
+
+    for cap in stmttrn_regex.captures_iter(&content) {
+        if let Some(block) = cap.get(1) {
+            if let Some(tx) = parse_ofx_transaction(block.as_str()) {
+                transactions.push(tx);
+            }
+        }
+    }
+
+    // If no transactions found with closing tags, try SGML style
+    if transactions.is_empty() {
+        transactions = parse_ofx_sgml(&content)?;
+    }
+
+    Ok(transactions)
+}
+
+/// Normalize OFX content for parsing
+fn normalize_ofx(content: &str) -> String {
+    // Remove OFX headers (everything before first <)
+    let content = if let Some(idx) = content.find('<') {
+        &content[idx..]
+    } else {
+        content
+    };
+
+    // Convert SGML-style tags to XML-style (add closing tags)
+    content.to_string()
+}
+
+/// Parse a single OFX transaction block
+fn parse_ofx_transaction(block: &str) -> Option<RawTransaction> {
+    let get_tag_value = |tag: &str| -> Option<String> {
+        // Try XML style first: <TAG>value</TAG>
+        let xml_regex = Regex::new(&format!(r"<{}>(.*?)</{}>", tag, tag)).ok()?;
+        if let Some(cap) = xml_regex.captures(block) {
+            return cap.get(1).map(|m| m.as_str().trim().to_string());
+        }
+
+        // Try SGML style: <TAG>value (no closing tag)
+        let sgml_regex = Regex::new(&format!(r"<{}>\s*([^\n<]+)", tag)).ok()?;
+        if let Some(cap) = sgml_regex.captures(block) {
+            return cap.get(1).map(|m| m.as_str().trim().to_string());
+        }
+
+        None
+    };
+
+    let date_str = get_tag_value("DTPOSTED")?;
+    let amount_str = get_tag_value("TRNAMT")?;
+    let name = get_tag_value("NAME").or_else(|| get_tag_value("MEMO"));
+    let memo = get_tag_value("MEMO");
+
+    // Parse OFX date format: YYYYMMDDHHMMSS or YYYYMMDD
+    let date = parse_ofx_date(&date_str)?;
+
+    let description = match (&name, &memo) {
+        (Some(n), Some(m)) if n != m => format!("{} - {}", n, m),
+        (Some(n), _) => n.clone(),
+        (None, Some(m)) => m.clone(),
+        (None, None) => return None,
+    };
+
+    Some(RawTransaction {
+        date,
+        description,
+        amount: amount_str,
+        debit: None,
+        credit: None,
+        category: None,
+    })
+}
+
+/// Parse OFX in SGML format (older format without closing tags)
+fn parse_ofx_sgml(content: &str) -> Result<Vec<RawTransaction>, ImportError> {
+    let mut transactions = Vec::new();
+    let lines: Vec<&str> = content.lines().collect();
+
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].contains("<STMTTRN>") {
+            let mut date_str = String::new();
+            let mut amount_str = String::new();
+            let mut name = String::new();
+            let mut memo = String::new();
+
+            // Collect transaction data until we hit end of block
+            let mut j = i + 1;
+            while j < lines.len() && !lines[j].contains("<STMTTRN>") && !lines[j].contains("</STMTTRN>") {
+                let line = lines[j].trim();
+
+                if line.starts_with("<DTPOSTED>") {
+                    date_str = line.replace("<DTPOSTED>", "").trim().to_string();
+                } else if line.starts_with("<TRNAMT>") {
+                    amount_str = line.replace("<TRNAMT>", "").trim().to_string();
+                } else if line.starts_with("<NAME>") {
+                    name = line.replace("<NAME>", "").trim().to_string();
+                } else if line.starts_with("<MEMO>") {
+                    memo = line.replace("<MEMO>", "").trim().to_string();
+                }
+
+                j += 1;
+                if lines[j - 1].contains("</STMTTRN>") {
+                    break;
+                }
+            }
+
+            if !date_str.is_empty() && !amount_str.is_empty() {
+                if let Some(date) = parse_ofx_date(&date_str) {
+                    let description = if !name.is_empty() && !memo.is_empty() && name != memo {
+                        format!("{} - {}", name, memo)
+                    } else if !name.is_empty() {
+                        name
+                    } else {
+                        memo
+                    };
+
+                    if !description.is_empty() {
+                        transactions.push(RawTransaction {
+                            date,
+                            description,
+                            amount: amount_str,
+                            debit: None,
+                            credit: None,
+                            category: None,
+                        });
+                    }
+                }
+            }
+
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+
+    Ok(transactions)
+}
+
+/// Parse OFX date format (YYYYMMDDHHMMSS or YYYYMMDD)
+fn parse_ofx_date(date_str: &str) -> Option<String> {
+    // OFX dates are in format YYYYMMDD or YYYYMMDDHHMMSS[.XXX:TZ]
+    let date_part = if date_str.len() >= 8 {
+        &date_str[0..8]
+    } else {
+        return None;
+    };
+
+    // Convert to YYYY-MM-DD format
+    if date_part.len() == 8 {
+        let year = &date_part[0..4];
+        let month = &date_part[4..6];
+        let day = &date_part[6..8];
+        Some(format!("{}-{}-{}", year, month, day))
+    } else {
+        None
+    }
+}
+
+/// Import transactions from QIF (Quicken Interchange Format) file
+pub fn import_qif(path: &Path) -> Result<Vec<RawTransaction>, ImportError> {
+    let content = fs::read_to_string(path)?;
+    let mut transactions = Vec::new();
+    let mut current_tx: Option<RawTransaction> = None;
+
+    for line in content.lines() {
+        let line = line.trim();
+
+        if line.is_empty() {
+            continue;
+        }
+
+        match line.chars().next() {
+            Some('D') => {
+                // Date
+                if current_tx.is_none() {
+                    current_tx = Some(RawTransaction {
+                        date: String::new(),
+                        description: String::new(),
+                        amount: "0".to_string(),
+                        debit: None,
+                        credit: None,
+                        category: None,
+                    });
+                }
+                if let Some(ref mut tx) = current_tx {
+                    tx.date = parse_qif_date(&line[1..]);
+                }
+            }
+            Some('T') | Some('U') => {
+                // Amount (T is amount, U is also amount in some versions)
+                if let Some(ref mut tx) = current_tx {
+                    tx.amount = line[1..].replace(',', "").trim().to_string();
+                }
+            }
+            Some('P') => {
+                // Payee
+                if let Some(ref mut tx) = current_tx {
+                    tx.description = line[1..].trim().to_string();
+                }
+            }
+            Some('M') => {
+                // Memo
+                if let Some(ref mut tx) = current_tx {
+                    if !tx.description.is_empty() {
+                        tx.description = format!("{} - {}", tx.description, &line[1..].trim());
+                    } else {
+                        tx.description = line[1..].trim().to_string();
+                    }
+                }
+            }
+            Some('L') => {
+                // Category
+                if let Some(ref mut tx) = current_tx {
+                    tx.category = Some(line[1..].trim().to_string());
+                }
+            }
+            Some('^') => {
+                // End of transaction
+                if let Some(tx) = current_tx.take() {
+                    if !tx.date.is_empty() && !tx.description.is_empty() {
+                        transactions.push(tx);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Don't forget the last transaction if file doesn't end with ^
+    if let Some(tx) = current_tx {
+        if !tx.date.is_empty() && !tx.description.is_empty() {
+            transactions.push(tx);
+        }
+    }
+
+    Ok(transactions)
+}
+
+/// Parse QIF date format
+fn parse_qif_date(date_str: &str) -> String {
+    // QIF dates can be in various formats: M/D/Y, M/D'Y, MM/DD/YYYY, etc.
+    let date_str = date_str.replace('\'', "/").replace('-', "/");
+
+    // Try to parse and convert to YYYY-MM-DD
+    let parts: Vec<&str> = date_str.split('/').collect();
+    if parts.len() >= 3 {
+        let month = parts[0].trim();
+        let day = parts[1].trim();
+        let year = parts[2].trim();
+
+        // Handle 2-digit years
+        let year = if year.len() == 2 {
+            let y: i32 = year.parse().unwrap_or(0);
+            if y > 50 { format!("19{}", year) } else { format!("20{}", year) }
+        } else {
+            year.to_string()
+        };
+
+        format!("{}-{:0>2}-{:0>2}", year, month, day)
+    } else {
+        date_str.to_string()
+    }
 }

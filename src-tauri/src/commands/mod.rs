@@ -6,23 +6,31 @@ use tauri::State;
 
 use crate::database::{self, repository, Database, DbResult};
 use crate::models::*;
-use crate::services::{self, importer, Categorizer};
+use crate::services::{self, encryption::EncryptionService, importer, Categorizer};
 
 pub struct AppState {
     pub db: Mutex<Option<Database>>,
+    pub encryption: Mutex<Option<EncryptionService>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             db: Mutex::new(None),
+            encryption: Mutex::new(None),
         }
     }
 
     pub fn init_database(&self) -> Result<(), String> {
         let db_path = database::get_database_path();
-        let db = Database::new(db_path).map_err(|e| e.to_string())?;
+        let db = Database::new(db_path.clone()).map_err(|e| e.to_string())?;
         *self.db.lock().unwrap() = Some(db);
+
+        // Initialize encryption service
+        let data_dir = db_path.parent().unwrap_or(&db_path).to_path_buf();
+        let encryption = EncryptionService::new(data_dir).map_err(|e| e.to_string())?;
+        *self.encryption.lock().unwrap() = Some(encryption);
+
         Ok(())
     }
 }
@@ -403,7 +411,22 @@ pub fn update_goal_progress(state: State<AppState>, id: String, amount: Decimal)
 #[tauri::command]
 pub fn detect_import_columns(path: String) -> Result<Vec<String>, String> {
     let path = PathBuf::from(&path);
-    importer::detect_csv_columns(&path).map_err(|e| e.to_string())
+    let format = importer::detect_file_format(&path).map_err(|e| e.to_string())?;
+
+    match format {
+        "csv" => importer::detect_csv_columns(&path).map_err(|e| e.to_string()),
+        "excel" => {
+            // For Excel, we'd need to read the first row as headers
+            // For now, return empty to let preview handle it
+            Ok(vec!["Date".to_string(), "Description".to_string(), "Amount".to_string()])
+        }
+        "ofx" | "qif" => {
+            // OFX and QIF have fixed field structures - no column mapping needed
+            // Return special marker columns to indicate this to the frontend
+            Ok(vec!["__AUTO__".to_string()])
+        }
+        _ => Err(format!("Unsupported format: {}", format)),
+    }
 }
 
 #[tauri::command]
@@ -420,13 +443,9 @@ pub fn import_transactions(
     mapping: importer::ImportMapping,
 ) -> Result<importer::ImportResult, String> {
     let path_buf = PathBuf::from(&path);
-    let format = importer::detect_file_format(&path_buf).map_err(|e| e.to_string())?;
 
-    let raw_transactions = match format {
-        "csv" => importer::import_csv(&path_buf, &mapping).map_err(|e| e.to_string())?,
-        "excel" => importer::import_excel(&path_buf, &mapping).map_err(|e| e.to_string())?,
-        _ => return Err(format!("Unsupported format: {}", format)),
-    };
+    // Use import_file which handles all supported formats (CSV, Excel, OFX, QFX, QIF)
+    let raw_transactions = importer::import_file(&path_buf, &mapping).map_err(|e| e.to_string())?;
 
     with_db(&state, |db| {
         db.with_connection(|conn| {
@@ -657,4 +676,189 @@ pub fn get_category_rules(state: State<AppState>) -> Result<Vec<CategoryRule>, S
     with_db(&state, |db| {
         db.with_connection(|conn| repository::get_category_rules(conn))
     })
+}
+
+// Notification Commands
+#[tauri::command]
+pub fn get_bill_reminders(state: State<AppState>, days_ahead: Option<i32>) -> Result<Vec<services::notifications::BillReminder>, String> {
+    let days = days_ahead.unwrap_or(7);
+
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let recurring = repository::get_all_recurring(conn)?;
+            let accounts = repository::get_all_accounts(conn)?;
+            let categories = repository::get_all_categories(conn)?;
+
+            let account_map: std::collections::HashMap<String, String> =
+                accounts.into_iter().map(|a| (a.id, a.name)).collect();
+            let category_map: std::collections::HashMap<String, String> =
+                categories.into_iter().map(|c| (c.id, c.name)).collect();
+
+            Ok(services::notifications::get_bill_reminders(
+                &recurring,
+                &account_map,
+                &category_map,
+                days,
+            ))
+        })
+    })
+}
+
+#[tauri::command]
+pub fn send_bill_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn check_and_send_notifications(
+    state: State<AppState>,
+    app: tauri::AppHandle,
+    days_before: i32,
+    show_amount: bool,
+) -> Result<usize, String> {
+    use tauri_plugin_notification::NotificationExt;
+
+    let reminders = with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let recurring = repository::get_all_recurring(conn)?;
+            let accounts = repository::get_all_accounts(conn)?;
+            let categories = repository::get_all_categories(conn)?;
+
+            let account_map: std::collections::HashMap<String, String> =
+                accounts.into_iter().map(|a| (a.id, a.name)).collect();
+            let category_map: std::collections::HashMap<String, String> =
+                categories.into_iter().map(|c| (c.id, c.name)).collect();
+
+            Ok(services::notifications::get_bill_reminders(
+                &recurring,
+                &account_map,
+                &category_map,
+                days_before,
+            ))
+        })
+    })?;
+
+    let mut sent = 0;
+    for reminder in &reminders {
+        if reminder.days_until <= days_before as i64 {
+            let title = services::notifications::format_notification_title(reminder);
+            let body = services::notifications::format_notification_body(reminder, show_amount);
+
+            if app.notification()
+                .builder()
+                .title(&title)
+                .body(&body)
+                .show()
+                .is_ok()
+            {
+                sent += 1;
+            }
+        }
+    }
+
+    Ok(sent)
+}
+
+// Encryption Commands
+#[tauri::command]
+pub fn get_encryption_status(state: State<AppState>) -> Result<services::encryption::EncryptionStatus, String> {
+    let guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_ref().ok_or("Encryption not initialized")?;
+
+    Ok(services::encryption::EncryptionStatus {
+        enabled: encryption.is_enabled(),
+        unlocked: encryption.is_unlocked(),
+    })
+}
+
+#[tauri::command]
+pub fn enable_encryption(state: State<AppState>, password: String) -> Result<(), String> {
+    let mut guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+
+    encryption.enable(&password).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn disable_encryption(state: State<AppState>, password: String) -> Result<(), String> {
+    let mut guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+
+    encryption.disable(&password).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unlock_encryption(state: State<AppState>, password: String) -> Result<(), String> {
+    let mut guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+
+    encryption.unlock(&password).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn lock_encryption(state: State<AppState>) -> Result<(), String> {
+    let mut guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+
+    encryption.lock();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn change_encryption_password(
+    state: State<AppState>,
+    old_password: String,
+    new_password: String,
+) -> Result<(), String> {
+    let mut guard = state.encryption.lock().unwrap();
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+
+    encryption.change_password(&old_password, &new_password).map_err(|e| e.to_string())
+}
+
+// Backup Commands
+#[tauri::command]
+pub fn export_backup(state: State<AppState>, path: String) -> Result<services::backup::BackupMetadata, String> {
+    let path_buf = PathBuf::from(&path);
+
+    with_db(&state, |db| {
+        services::backup::export_backup_to_file(db, &path_buf)
+            .map_err(|e| crate::database::DbError::Other(e.to_string()))
+    })
+}
+
+#[tauri::command]
+pub fn import_backup(state: State<AppState>, path: String) -> Result<services::backup::BackupMetadata, String> {
+    let path_buf = PathBuf::from(&path);
+
+    with_db(&state, |db| {
+        services::backup::import_backup_from_file(db, &path_buf)
+            .map_err(|e| crate::database::DbError::Other(e.to_string()))
+    })
+}
+
+#[tauri::command]
+pub fn get_backup_info(path: String) -> Result<services::backup::BackupMetadata, String> {
+    let path_buf = PathBuf::from(&path);
+    services::backup::get_backup_info(&path_buf).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_default_backup_path() -> String {
+    services::backup::get_default_backup_path()
+        .to_string_lossy()
+        .to_string()
 }

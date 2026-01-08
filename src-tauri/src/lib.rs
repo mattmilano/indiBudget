@@ -56,6 +56,22 @@ pub fn run() {
             // Category Rules
             commands::create_category_rule,
             commands::get_category_rules,
+            // Notifications
+            commands::get_bill_reminders,
+            commands::send_bill_notification,
+            commands::check_and_send_notifications,
+            // Encryption
+            commands::get_encryption_status,
+            commands::enable_encryption,
+            commands::disable_encryption,
+            commands::unlock_encryption,
+            commands::lock_encryption,
+            commands::change_encryption_password,
+            // Backup
+            commands::export_backup,
+            commands::import_backup,
+            commands::get_backup_info,
+            commands::get_default_backup_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

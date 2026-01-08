@@ -37,13 +37,17 @@ const dateFormats = [
 
 const useSeparateColumns = ref(false);
 
+const isAutoFormat = ref(false);
+
 async function selectFile() {
   const selected = await open({
     multiple: false,
     filters: [
-      { name: 'Spreadsheets', extensions: ['csv', 'xlsx', 'xls'] },
+      { name: 'All Supported', extensions: ['csv', 'xlsx', 'xls', 'ofx', 'qfx', 'qif'] },
       { name: 'CSV', extensions: ['csv'] },
       { name: 'Excel', extensions: ['xlsx', 'xls'] },
+      { name: 'OFX/QFX (Bank)', extensions: ['ofx', 'qfx'] },
+      { name: 'QIF (Quicken)', extensions: ['qif'] },
     ],
   });
 
@@ -52,7 +56,14 @@ async function selectFile() {
     try {
       loading.value = true;
       columns.value = await api.detectImportColumns(selected);
-      if (columns.value.length > 0) {
+
+      // Check if this is an auto-format (OFX/QFX/QIF) that doesn't need column mapping
+      if (columns.value.length === 1 && columns.value[0] === '__AUTO__') {
+        isAutoFormat.value = true;
+        // Skip column mapping step and go directly to preview
+        await previewImport();
+      } else if (columns.value.length > 0) {
+        isAutoFormat.value = false;
         autoMapColumns();
         step.value = 'map';
       }
@@ -145,6 +156,7 @@ function resetImport() {
   previewData.value = [];
   importResult.value = null;
   step.value = 'select';
+  isAutoFormat.value = false;
   mapping.value = {
     date_column: 'Date',
     description_column: 'Description',
@@ -197,7 +209,7 @@ onMounted(() => {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
         </svg>
         <p class="text-gray-600 dark:text-gray-400">Click to select a file</p>
-        <p class="text-sm text-gray-500 dark:text-gray-500 mt-1">CSV, XLSX, or XLS</p>
+        <p class="text-sm text-gray-500 dark:text-gray-500 mt-1">CSV, Excel, OFX, QFX, or QIF</p>
       </button>
     </div>
 
@@ -334,7 +346,7 @@ onMounted(() => {
 
       <div class="flex justify-between mt-6">
         <button
-          @click="step = 'map'"
+          @click="step = isAutoFormat ? 'select' : 'map'"
           class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
         >
           Back

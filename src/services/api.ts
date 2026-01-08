@@ -23,6 +23,9 @@ import type {
   MonthlyTrend,
   CashFlowReport,
   CategoryRule,
+  BillReminder,
+  EncryptionStatus,
+  BackupMetadata,
 } from '../types';
 
 // Initialization
@@ -117,3 +120,45 @@ export const createCategoryRule = (categoryId: string, pattern: string, field?: 
   invoke<CategoryRule>('create_category_rule', { categoryId, pattern, field });
 
 export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules');
+
+// Notifications
+export const getBillReminders = (daysAhead?: number) =>
+  invoke<BillReminder[]>('get_bill_reminders', { daysAhead });
+
+export const sendBillNotification = (title: string, body: string) =>
+  invoke<void>('send_bill_notification', { title, body });
+
+export const checkAndSendNotifications = (daysBefore: number, showAmount: boolean) =>
+  invoke<number>('check_and_send_notifications', { daysBefore, showAmount });
+
+// Encryption
+export const getEncryptionStatus = () =>
+  invoke<EncryptionStatus>('get_encryption_status');
+
+export const enableEncryption = (password: string) =>
+  invoke<void>('enable_encryption', { password });
+
+export const disableEncryption = (password: string) =>
+  invoke<void>('disable_encryption', { password });
+
+export const unlockEncryption = (password: string) =>
+  invoke<void>('unlock_encryption', { password });
+
+export const lockEncryption = () =>
+  invoke<void>('lock_encryption');
+
+export const changeEncryptionPassword = (oldPassword: string, newPassword: string) =>
+  invoke<void>('change_encryption_password', { oldPassword, newPassword });
+
+// Backup
+export const exportBackup = (path: string) =>
+  invoke<BackupMetadata>('export_backup', { path });
+
+export const importBackup = (path: string) =>
+  invoke<BackupMetadata>('import_backup', { path });
+
+export const getBackupInfo = (path: string) =>
+  invoke<BackupMetadata>('get_backup_info', { path });
+
+export const getDefaultBackupPath = () =>
+  invoke<string>('get_default_backup_path');

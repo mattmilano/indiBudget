@@ -286,3 +286,35 @@ export interface CategoryRule {
   priority: number;
   created_at: string;
 }
+
+export interface BillReminder {
+  recurring_id: string;
+  description: string;
+  amount: string;
+  due_date: string;
+  days_until: number;
+  transaction_type: TransactionType;
+  account_name: string;
+  category_name?: string;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  days_before: number;
+  show_amount: boolean;
+  sound: boolean;
+}
+
+export interface EncryptionStatus {
+  enabled: boolean;
+  unlocked: boolean;
+}
+
+export interface BackupMetadata {
+  version: string;
+  created_at: string;
+  app_version: string;
+  account_count: number;
+  transaction_count: number;
+  category_count: number;
+}
