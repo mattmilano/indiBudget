@@ -237,22 +237,13 @@ pub fn get_transaction(conn: &Connection, id: &str) -> DbResult<Transaction> {
 }
 
 pub fn get_transactions(conn: &Connection, filter: &TransactionFilter) -> DbResult<Vec<Transaction>> {
-    let mut sql = String::from(
-        "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
+    // Fetch all transactions and filter in memory
+    // This is simpler and avoids SQL parameter binding complexity
+    let sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
          status, is_split, parent_transaction_id, recurring_id, transfer_account_id, imported_id, created_at, updated_at
-         FROM transactions WHERE 1=1",
-    );
+         FROM transactions ORDER BY date DESC, created_at DESC";
 
-    if filter.start_date.is_some() {
-        sql.push_str(" AND date >= ?");
-    }
-    if filter.end_date.is_some() {
-        sql.push_str(" AND date <= ?");
-    }
-
-    sql.push_str(" ORDER BY date DESC, created_at DESC");
-
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| transaction_from_row(row))?;
 
     let transactions: Vec<Transaction> = rows
