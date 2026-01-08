@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
 import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult } from '../types';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import * as api from '../services/api';
 
 const transactionsStore = useTransactionsStore();
@@ -18,6 +18,57 @@ const filterAccountId = ref('');
 const filterCategoryId = ref('');
 const filterType = ref<TransactionType | ''>('');
 
+// Date range filters
+type DatePreset = 'all' | 'this-month' | 'last-month' | 'this-quarter' | 'this-year' | 'last-year' | 'custom';
+const datePreset = ref<DatePreset>('all');
+const customStartDate = ref('');
+const customEndDate = ref('');
+
+// Calculate date ranges based on preset
+const dateRange = computed(() => {
+  const now = new Date();
+
+  switch (datePreset.value) {
+    case 'this-month':
+      return {
+        start: format(startOfMonth(now), 'yyyy-MM-dd'),
+        end: format(endOfMonth(now), 'yyyy-MM-dd'),
+      };
+    case 'last-month': {
+      const lastMonth = subMonths(now, 1);
+      return {
+        start: format(startOfMonth(lastMonth), 'yyyy-MM-dd'),
+        end: format(endOfMonth(lastMonth), 'yyyy-MM-dd'),
+      };
+    }
+    case 'this-quarter':
+      return {
+        start: format(startOfQuarter(now), 'yyyy-MM-dd'),
+        end: format(endOfQuarter(now), 'yyyy-MM-dd'),
+      };
+    case 'this-year':
+      return {
+        start: format(startOfYear(now), 'yyyy-MM-dd'),
+        end: format(endOfYear(now), 'yyyy-MM-dd'),
+      };
+    case 'last-year': {
+      const lastYear = subYears(now, 1);
+      return {
+        start: format(startOfYear(lastYear), 'yyyy-MM-dd'),
+        end: format(endOfYear(lastYear), 'yyyy-MM-dd'),
+      };
+    }
+    case 'custom':
+      return {
+        start: customStartDate.value || '',
+        end: customEndDate.value || '',
+      };
+    case 'all':
+    default:
+      return { start: '', end: '' };
+  }
+});
+
 const newTransaction = ref<CreateTransactionRequest>({
   account_id: '',
   transaction_type: 'expense',
@@ -31,6 +82,14 @@ const newTransaction = ref<CreateTransactionRequest>({
 
 const filteredTransactions = computed(() => {
   let result = transactionsStore.sortedTransactions;
+
+  // Apply date range filter
+  if (dateRange.value.start) {
+    result = result.filter(t => t.date >= dateRange.value.start);
+  }
+  if (dateRange.value.end) {
+    result = result.filter(t => t.date <= dateRange.value.end);
+  }
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
@@ -54,6 +113,28 @@ const filteredTransactions = computed(() => {
   }
 
   return result;
+});
+
+// Summary stats for filtered transactions
+const transactionSummary = computed(() => {
+  let income = 0;
+  let expenses = 0;
+
+  for (const tx of filteredTransactions.value) {
+    const amount = parseFloat(tx.amount) || 0;
+    if (tx.transaction_type === 'income') {
+      income += amount;
+    } else if (tx.transaction_type === 'expense') {
+      expenses += amount;
+    }
+  }
+
+  return {
+    count: filteredTransactions.value.length,
+    income,
+    expenses,
+    net: income - expenses,
+  };
 });
 
 const formatCurrency = (value: string | number) => {
@@ -111,7 +192,7 @@ async function autoCategorize() {
 }
 
 const uncategorizedCount = computed(() => {
-  return transactionsStore.transactions.filter(t => !t.category_id).length;
+  return filteredTransactions.value.filter(t => !t.category_id).length;
 });
 
 onMounted(async () => {
@@ -152,6 +233,81 @@ onMounted(async () => {
         >
           Add Transaction
         </button>
+      </div>
+    </div>
+
+    <!-- Date Range Selector -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Date Range:</span>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="preset in ['all', 'this-month', 'last-month', 'this-quarter', 'this-year', 'last-year'] as DatePreset[]"
+            :key="preset"
+            @click="datePreset = preset"
+            :class="[
+              'px-3 py-1.5 text-sm rounded-lg transition-colors',
+              datePreset === preset
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            ]"
+          >
+            {{ preset === 'all' ? 'All Time' :
+               preset === 'this-month' ? 'This Month' :
+               preset === 'last-month' ? 'Last Month' :
+               preset === 'this-quarter' ? 'This Quarter' :
+               preset === 'this-year' ? 'This Year' :
+               'Last Year' }}
+          </button>
+          <button
+            @click="datePreset = 'custom'"
+            :class="[
+              'px-3 py-1.5 text-sm rounded-lg transition-colors',
+              datePreset === 'custom'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            ]"
+          >
+            Custom
+          </button>
+        </div>
+
+        <!-- Custom Date Inputs -->
+        <div v-if="datePreset === 'custom'" class="flex items-center gap-2 ml-auto">
+          <input
+            v-model="customStartDate"
+            type="date"
+            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          />
+          <span class="text-gray-500">to</span>
+          <input
+            v-model="customEndDate"
+            type="date"
+            class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Transactions</p>
+        <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ transactionSummary.count }}</p>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Income</p>
+        <p class="text-2xl font-bold text-green-600">{{ formatCurrency(transactionSummary.income) }}</p>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Expenses</p>
+        <p class="text-2xl font-bold text-red-600">{{ formatCurrency(transactionSummary.expenses) }}</p>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Net</p>
+        <p :class="['text-2xl font-bold', transactionSummary.net >= 0 ? 'text-green-600' : 'text-red-600']">
+          {{ formatCurrency(transactionSummary.net) }}
+        </p>
       </div>
     </div>
 
@@ -197,7 +353,7 @@ onMounted(async () => {
     <!-- Transactions List -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
       <div v-if="filteredTransactions.length === 0" class="p-8 text-center text-gray-500">
-        No transactions found. Add your first transaction or import a statement!
+        No transactions found for the selected period. Try adjusting your filters or date range.
       </div>
       <div v-else class="divide-y divide-gray-200 dark:divide-gray-700">
         <div
