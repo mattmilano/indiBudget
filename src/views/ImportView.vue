@@ -153,8 +153,8 @@ async function performImport() {
       mappingToSend
     );
     step.value = 'result';
-    // Refresh the transactions store so other views see the imported data
-    await transactionsStore.fetchTransactions();
+    // Refresh the transactions store with no filter so all views see the imported data
+    await transactionsStore.fetchTransactions({});
   } catch (e) {
     console.error('Failed to import:', e);
     errorMessage.value = `Failed to import: ${e}`;
