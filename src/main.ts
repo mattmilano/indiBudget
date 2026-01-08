@@ -3,7 +3,12 @@ import { createPinia } from 'pinia';
 import App from './App.vue';
 import router from './router';
 import { initApp } from './services/api';
+import { useTheme } from './composables/useTheme';
 import './styles.css';
+
+// Initialize theme early to prevent flash
+const { initTheme } = useTheme();
+initTheme();
 
 const app = createApp(App);
 const pinia = createPinia();

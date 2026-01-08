@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { save, open } from '@tauri-apps/plugin-dialog';
 import * as api from '../services/api';
+import { useTheme, type ThemeMode } from '../composables/useTheme';
 import type { EncryptionStatus, BackupMetadata } from '../types';
+
+const { currentTheme, setTheme } = useTheme();
 
 const settings = ref({
   currency: 'USD',
   dateFormat: 'MM/DD/YYYY',
-  theme: 'system',
+  theme: currentTheme.value as string,
   notifications: {
     upcomingBills: true,
     budgetAlerts: true,
@@ -15,6 +18,11 @@ const settings = ref({
     reminderDays: 3,
     showAmount: true,
   },
+});
+
+// Watch for theme changes and apply them
+watch(() => settings.value.theme, (newTheme) => {
+  setTheme(newTheme as ThemeMode);
 });
 
 const notificationStatus = ref('');
@@ -48,6 +56,9 @@ onMounted(async () => {
       console.error('Failed to load settings:', e);
     }
   }
+
+  // Sync theme from the composable (it handles its own storage)
+  settings.value.theme = currentTheme.value;
 
   // Load encryption status
   try {
