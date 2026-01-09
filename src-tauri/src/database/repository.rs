@@ -608,3 +608,64 @@ pub fn create_category_rule(conn: &Connection, rule: &CategoryRule) -> DbResult<
     )?;
     Ok(())
 }
+
+/// Create a user-defined category rule with high priority (100)
+/// User rules take precedence over system default rules
+pub fn create_user_category_rule(conn: &Connection, pattern: &str, category_id: &str) -> DbResult<()> {
+    // Check if a similar rule already exists for this pattern and category
+    let existing: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM category_rules WHERE LOWER(pattern) = LOWER(?1) AND category_id = ?2",
+        params![pattern, category_id],
+        |row| row.get(0),
+    )?;
+
+    if existing > 0 {
+        // Rule already exists, no need to add duplicate
+        return Ok(());
+    }
+
+    let rule = CategoryRule::with_priority(
+        category_id.to_string(),
+        pattern.to_lowercase(),
+        "description".to_string(),
+        100, // User rules get highest priority
+    );
+
+    conn.execute(
+        "INSERT INTO category_rules (id, category_id, pattern, field, is_regex, priority, created_at, is_user_created)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
+        params![
+            rule.id,
+            rule.category_id,
+            rule.pattern,
+            rule.field,
+            rule.is_regex as i32,
+            rule.priority,
+            rule.created_at.to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Get all user-created category rules
+pub fn get_user_category_rules(conn: &Connection) -> DbResult<Vec<CategoryRule>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, category_id, pattern, field, is_regex, priority, created_at
+         FROM category_rules WHERE is_user_created = 1 ORDER BY priority DESC",
+    )?;
+    let rules = stmt
+        .query_map([], |row| {
+            Ok(CategoryRule {
+                id: row.get(0)?,
+                category_id: row.get(1)?,
+                pattern: row.get(2)?,
+                field: row.get(3)?,
+                is_regex: row.get::<_, i32>(4)? == 1,
+                priority: row.get(5)?,
+                created_at: parse_datetime(&row.get::<_, String>(6)?),
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rules)
+}

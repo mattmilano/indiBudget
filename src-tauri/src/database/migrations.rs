@@ -22,6 +22,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_004_GOALS, 4),
         (MIGRATION_005_IMPORT_RULES, 5),
         (MIGRATION_006_CANCELLED_SUBSCRIPTIONS, 6),
+        (MIGRATION_007_USER_CATEGORY_RULES, 7),
     ];
 
     for (sql, version) in migrations {
@@ -197,4 +198,12 @@ const MIGRATION_006_CANCELLED_SUBSCRIPTIONS: &str = r#"
     );
 
     CREATE INDEX IF NOT EXISTS idx_cancelled_subscriptions_date ON cancelled_subscriptions(cancelled_at);
+"#;
+
+const MIGRATION_007_USER_CATEGORY_RULES: &str = r#"
+    -- Add is_user_created column to distinguish user rules from system defaults
+    ALTER TABLE category_rules ADD COLUMN is_user_created INTEGER NOT NULL DEFAULT 0;
+
+    -- User rules get highest priority (100) by default to override system rules
+    CREATE INDEX IF NOT EXISTS idx_category_rules_user ON category_rules(is_user_created);
 "#;

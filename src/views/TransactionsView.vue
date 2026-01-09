@@ -239,7 +239,10 @@ async function executeBatchCategorize() {
     if (result.total_updated > 0) {
       // Refresh transactions to show updated categories
       await transactionsStore.fetchTransactions({});
-      alert(`Successfully categorized ${result.total_updated} transactions matching "${result.keyword}".`);
+      const ruleMsg = result.rule_saved
+        ? '\n\nThis keyword has been saved and will be used to automatically categorize future imports.'
+        : '';
+      alert(`Successfully categorized ${result.total_updated} transactions matching "${result.keyword}".${ruleMsg}`);
       closeBatchModal();
     } else {
       alert('No matching transactions found to categorize.');

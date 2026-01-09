@@ -30,6 +30,7 @@ import type {
   EncryptionStatus,
   BackupMetadata,
   AutoCategorizeResult,
+  BatchCategorizeResult,
 } from '../types';
 
 // Initialization
@@ -146,9 +147,9 @@ export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules
 export const autoCategorizeTransactions = () =>
   invoke<AutoCategorizeResult>('auto_categorize_transactions');
 
-// Batch Categorize
-export const batchCategorizeTransactions = (keyword: string, categoryId: string, matchUncategorizedOnly: boolean) =>
-  invoke<BatchCategorizeResult>('batch_categorize_transactions', { keyword, categoryId, matchUncategorizedOnly });
+// Batch Categorize - also saves the keyword as a rule for future auto-categorization
+export const batchCategorizeTransactions = (keyword: string, categoryId: string, matchUncategorizedOnly: boolean, saveRule: boolean = true) =>
+  invoke<BatchCategorizeResult>('batch_categorize_transactions', { keyword, categoryId, matchUncategorizedOnly, saveRule });
 
 // Notifications
 export const getBillReminders = (daysAhead?: number) =>

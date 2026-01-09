@@ -902,12 +902,14 @@ pub struct CategoryBreakdown {
 }
 
 // Batch Categorize Command - allows re-categorizing transactions by keyword
+// Also saves the rule for future auto-categorization
 #[tauri::command]
 pub fn batch_categorize_transactions(
     state: State<AppState>,
     keyword: String,
     category_id: String,
     match_uncategorized_only: bool,
+    save_rule: Option<bool>,
 ) -> Result<BatchCategorizeResult, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
@@ -943,9 +945,18 @@ pub fn batch_categorize_transactions(
                 }
             }
 
+            // Save the rule for future auto-categorization if requested (default: true)
+            let should_save_rule = save_rule.unwrap_or(true);
+            let rule_saved = if should_save_rule && updated_count > 0 {
+                repository::create_user_category_rule(conn, &keyword_lower, &category_id).is_ok()
+            } else {
+                false
+            };
+
             Ok(BatchCategorizeResult {
                 total_updated: updated_count,
                 keyword: keyword.clone(),
+                rule_saved,
             })
         })
     })
@@ -955,6 +966,7 @@ pub fn batch_categorize_transactions(
 pub struct BatchCategorizeResult {
     pub total_updated: usize,
     pub keyword: String,
+    pub rule_saved: bool,
 }
 
 // Category Rules Commands

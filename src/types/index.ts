@@ -367,4 +367,5 @@ export interface CategoryBreakdown {
 export interface BatchCategorizeResult {
   total_updated: number;
   keyword: string;
+  rule_saved: boolean;
 }

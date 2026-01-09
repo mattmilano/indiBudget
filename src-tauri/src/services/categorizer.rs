@@ -99,8 +99,10 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
         "kroger fuel", "walmart fuel", "costco gas", "costco fuel", "sam's fuel",
         "sam's gas", "safeway fuel", "albertsons fuel", "heb fuel", "h-e-b fuel",
         "meijer fuel", "giant fuel", "stop & shop fuel", "bj's gas", "bj's fuel",
-        "murphy usa", "murphy oil", "kum & go", "kwik trip fuel", "wawa gas",
+        "murphy usa", "murphy oil", "kum & go", "kwik trip fuel",
         "sheetz gas", "raceway", "thorntons", "getgo", "giant eagle fuel",
+        // WaWa and Sheetz are primarily gas stations/convenience stores
+        "wawa", "sheetz",
     ] {
         rules.push(CategoryRule::with_priority("cat_expense_gas".into(), pattern.into(), "description".into(), 10));
     }
@@ -143,8 +145,18 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Utilities (note: "gas bill" and "natural gas" are utilities, not fuel)
-    for pattern in ["electric", "electricity", "power company", "pge", "pg&e", "con edison", "duke energy", "water bill", "water utility", "sewer", "gas bill", "natural gas", "internet", "broadband", "comcast", "xfinity", "spectrum", "cox", "centurylink", "frontier", "t-mobile", "verizon", "at&t", "sprint", "metro pcs", "mint mobile"] {
+    for pattern in ["electric", "electricity", "power company", "pge", "pg&e", "con edison", "duke energy", "water bill", "water utility", "sewer", "gas bill", "natural gas", "internet", "broadband", "comcast", "xfinity", "spectrum", "cox", "centurylink", "frontier", "fios"] {
         rules.push(CategoryRule::new("cat_expense_utilities".into(), pattern.into(), "description".into()));
+    }
+
+    // Cell Phone / Mobile Plans
+    for pattern in ["t-mobile", "verizon wireless", "verizon mobile", "at&t wireless", "at&t mobility", "sprint", "metro pcs", "metropcs", "mint mobile", "cricket wireless", "boost mobile", "us cellular", "google fi", "visible wireless", "straight talk", "tracfone", "consumer cellular", "ting mobile", "republic wireless"] {
+        rules.push(CategoryRule::new("cat_expense_phone".into(), pattern.into(), "description".into()));
+    }
+
+    // Professional & Technology Services (AI, hosting, development tools)
+    for pattern in ["anthropic", "claude", "openai", "chatgpt", "github copilot", "aws", "amazon web services", "google cloud", "azure", "digitalocean", "linode", "vultr", "heroku", "netlify", "vercel", "cloudflare", "namecheap", "godaddy", "hover", "squarespace", "wix", "webflow", "figma", "linear", "jira", "confluence", "asana", "monday.com", "basecamp", "trello"] {
+        rules.push(CategoryRule::new("cat_expense_professional".into(), pattern.into(), "description".into()));
     }
 
     // Groceries (removed stores that also sell fuel - those need HIGH PRIORITY fuel rules)
@@ -188,7 +200,13 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Streaming Services (Video)
-    for pattern in ["netflix", "hulu", "disney+", "disney plus", "hbo max", "max streaming", "amazon prime video", "peacock", "paramount+", "paramount plus", "apple tv", "youtube premium", "youtube tv", "crunchyroll", "funimation", "discovery+", "showtime", "starz", "fubo", "sling tv", "philo", "tubi"] {
+    for pattern in [
+        "netflix", "hulu", "disney+", "disney plus", "disneyplus", "hbo max", "max streaming",
+        "amazon prime video", "prime video", "peacock", "paramount+", "paramount plus",
+        "apple tv", "youtube premium", "youtube tv", "google yt premium", "yt premium",
+        "crunchyroll", "funimation", "discovery+", "showtime", "starz", "fubo", "sling tv",
+        "philo", "tubi", "amazon prime", "prime membership",
+    ] {
         rules.push(CategoryRule::new("cat_expense_streaming".into(), pattern.into(), "description".into()));
     }
 
@@ -217,8 +235,15 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
         rules.push(CategoryRule::new("cat_expense_healthcare".into(), pattern.into(), "description".into()));
     }
 
-    // Shopping
-    for pattern in ["amazon.com", "walmart.com", "target", "best buy", "home depot", "lowe's", "costco", "ikea", "bed bath", "wayfair", "overstock", "etsy", "ebay", "aliexpress", "wish.com", "macy's", "nordstrom", "kohl's", "jc penney", "sears", "marshalls", "tj maxx", "ross", "burlington", "dollar", "big lots", "michaels", "joann", "hobby lobby"] {
+    // Shopping (general retailers - Walmart is a catch-all since it sells everything)
+    for pattern in [
+        "amazon.com", "amazon purchase", "amzn", "walmart", "wal-mart", "target", "best buy",
+        "home depot", "lowe's", "costco", "ikea", "bed bath", "wayfair", "overstock",
+        "etsy", "ebay", "aliexpress", "wish.com", "macy's", "nordstrom", "kohl's",
+        "jc penney", "sears", "marshalls", "tj maxx", "ross", "burlington", "dollar",
+        "big lots", "michaels", "joann", "hobby lobby", "five below", "dollar tree",
+        "dollar general", "family dollar", "menards", "ace hardware", "tractor supply",
+    ] {
         rules.push(CategoryRule::new("cat_expense_shopping".into(), pattern.into(), "description".into()));
     }
 

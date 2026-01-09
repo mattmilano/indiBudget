@@ -173,6 +173,12 @@ pub fn get_default_categories() -> Vec<Category> {
         Category::system("cat_expense_loan", "Loan Payments", CategoryType::Expense, "#6d28d9"),
         Category::system("cat_expense_transfer", "Transfers", CategoryType::Expense, "#5b21b6"),
 
+        // Cell Phone & Internet
+        Category::system("cat_expense_phone", "Cell Phone", CategoryType::Expense, "#0891b2"),
+
+        // Professional & Technology Services
+        Category::system("cat_expense_professional", "Professional Services", CategoryType::Expense, "#4f46e5"),
+
         // Other
         Category::system("cat_expense_personal", "Personal Care", CategoryType::Expense, "#a855f7"),
         Category::system("cat_expense_education", "Education", CategoryType::Expense, "#d946ef"),
