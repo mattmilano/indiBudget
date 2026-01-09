@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
-import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult } from '../types';
+import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult, UserCategoryRule } from '../types';
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import * as api from '../services/api';
 
@@ -25,6 +25,12 @@ const batchCategoryId = ref('');
 const batchUncategorizedOnly = ref(true);
 const batchProcessing = ref(false);
 const batchResult = ref<BatchCategorizeResult | null>(null);
+
+// User rules management state
+const showRulesModal = ref(false);
+const userRules = ref<UserCategoryRule[]>([]);
+const loadingRules = ref(false);
+const deletingRuleId = ref<string | null>(null);
 
 // Date range filters
 type DatePreset = 'all' | 'this-month' | 'last-month' | 'this-quarter' | 'this-year' | 'last-year' | 'custom';
@@ -263,6 +269,40 @@ function closeBatchModal() {
   batchResult.value = null;
 }
 
+// User rules management functions
+async function loadUserRules() {
+  loadingRules.value = true;
+  try {
+    userRules.value = await api.getUserCategoryRules();
+  } catch (e) {
+    console.error('Failed to load user rules:', e);
+  } finally {
+    loadingRules.value = false;
+  }
+}
+
+async function openRulesModal() {
+  showRulesModal.value = true;
+  await loadUserRules();
+}
+
+async function deleteUserRule(ruleId: string) {
+  if (!confirm('Are you sure you want to delete this rule? Future imports will no longer use this categorization.')) {
+    return;
+  }
+
+  deletingRuleId.value = ruleId;
+  try {
+    await api.deleteUserCategoryRule(ruleId);
+    userRules.value = userRules.value.filter(r => r.id !== ruleId);
+  } catch (e) {
+    console.error('Failed to delete rule:', e);
+    alert('Failed to delete the rule.');
+  } finally {
+    deletingRuleId.value = null;
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     accountsStore.fetchAccounts(),
@@ -298,13 +338,15 @@ onMounted(async () => {
           {{ categorizing ? 'Categorizing...' : `Auto-Categorize (${uncategorizedCount})` }}
         </button>
         <button
-          @click="showBatchModal = true"
-          class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+          @click="openRulesModal"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+          title="Manage custom categorization rules"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          Batch Categorize
+          Rules
         </button>
         <button
           @click="showAddModal = true"
@@ -745,6 +787,130 @@ onMounted(async () => {
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- User Rules Management Modal -->
+    <div
+      v-if="showRulesModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      @click.self="showRulesModal = false"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Custom Categorization Rules</h3>
+          </div>
+          <button
+            @click="showRulesModal = false"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="p-4">
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            These rules were created when you batch-categorized transactions. They are automatically applied to future imports.
+          </p>
+
+          <!-- Loading state -->
+          <div v-if="loadingRules" class="py-8 text-center text-gray-500">
+            <svg class="animate-spin h-6 w-6 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Loading rules...
+          </div>
+
+          <!-- Empty state -->
+          <div v-else-if="userRules.length === 0" class="py-8 text-center">
+            <svg class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <p class="text-gray-500 dark:text-gray-400">No custom rules yet.</p>
+            <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">Use "Batch Categorize" to create rules.</p>
+          </div>
+
+          <!-- Rules list -->
+          <div v-else class="space-y-2 max-h-72 overflow-y-auto">
+            <div
+              v-for="rule in userRules"
+              :key="rule.id"
+              class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-gray-900 dark:text-white truncate">"{{ rule.pattern }}"</span>
+                  <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                  <span class="text-indigo-600 dark:text-indigo-400 truncate">{{ rule.category_name }}</span>
+                </div>
+              </div>
+              <button
+                @click="deleteUserRule(rule.id)"
+                :disabled="deletingRuleId === rule.id"
+                class="ml-3 p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                title="Delete rule"
+              >
+                <svg v-if="deletingRuleId === rule.id" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+          <button
+            @click="showRulesModal = false"
+            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Action Button for Batch Categorize (visible when scrolling) -->
+    <div class="fixed bottom-6 right-6 flex flex-col gap-3 z-40">
+      <button
+        v-if="uncategorizedCount > 0"
+        @click="autoCategorize"
+        :disabled="categorizing"
+        class="w-14 h-14 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-all disabled:opacity-50 flex items-center justify-center group"
+        title="Auto-Categorize"
+      >
+        <svg v-if="categorizing" class="animate-spin h-6 w-6" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+        </svg>
+        <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center">
+          {{ uncategorizedCount > 99 ? '99+' : uncategorizedCount }}
+        </span>
+      </button>
+      <button
+        @click="showBatchModal = true"
+        class="w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center"
+        title="Batch Categorize"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+      </button>
     </div>
   </div>
 </template>

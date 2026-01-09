@@ -369,3 +369,11 @@ export interface BatchCategorizeResult {
   keyword: string;
   rule_saved: boolean;
 }
+
+export interface UserCategoryRule {
+  id: string;
+  pattern: string;
+  category_id: string;
+  category_name: string;
+  created_at: string;
+}

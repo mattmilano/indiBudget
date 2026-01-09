@@ -989,6 +989,45 @@ pub fn get_category_rules(state: State<AppState>) -> Result<Vec<CategoryRule>, S
     })
 }
 
+#[tauri::command]
+pub fn get_user_category_rules(state: State<AppState>) -> Result<Vec<UserCategoryRule>, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let rules = repository::get_user_category_rules(conn)?;
+            let categories = repository::get_all_categories(conn)?;
+            let category_map: std::collections::HashMap<String, String> =
+                categories.into_iter().map(|c| (c.id, c.name)).collect();
+
+            Ok(rules
+                .into_iter()
+                .map(|r| UserCategoryRule {
+                    id: r.id,
+                    pattern: r.pattern,
+                    category_id: r.category_id.clone(),
+                    category_name: category_map.get(&r.category_id).cloned().unwrap_or_default(),
+                    created_at: r.created_at.to_rfc3339(),
+                })
+                .collect())
+        })
+    })
+}
+
+#[tauri::command]
+pub fn delete_user_category_rule(state: State<AppState>, rule_id: String) -> Result<bool, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::delete_user_category_rule(conn, &rule_id))
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserCategoryRule {
+    pub id: String,
+    pub pattern: String,
+    pub category_id: String,
+    pub category_name: String,
+    pub created_at: String,
+}
+
 // Notification Commands
 #[tauri::command]
 pub fn get_bill_reminders(state: State<AppState>, days_ahead: Option<i32>) -> Result<Vec<services::notifications::BillReminder>, String> {

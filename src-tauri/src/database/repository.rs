@@ -669,3 +669,12 @@ pub fn get_user_category_rules(conn: &Connection) -> DbResult<Vec<CategoryRule>>
         .collect();
     Ok(rules)
 }
+
+/// Delete a user-created category rule by ID
+pub fn delete_user_category_rule(conn: &Connection, rule_id: &str) -> DbResult<bool> {
+    let affected = conn.execute(
+        "DELETE FROM category_rules WHERE id = ?1 AND is_user_created = 1",
+        params![rule_id],
+    )?;
+    Ok(affected > 0)
+}

@@ -145,7 +145,7 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Utilities (note: "gas bill" and "natural gas" are utilities, not fuel)
-    for pattern in ["electric", "electricity", "power company", "pge", "pg&e", "con edison", "duke energy", "water bill", "water utility", "sewer", "gas bill", "natural gas", "internet", "broadband", "comcast", "xfinity", "spectrum", "cox", "centurylink", "frontier", "fios"] {
+    for pattern in ["utility", "utilities", "electric", "electricity", "power company", "pge", "pg&e", "con edison", "duke energy", "water bill", "water utility", "sewer", "gas bill", "natural gas", "internet", "broadband", "comcast", "xfinity", "spectrum", "cox", "centurylink", "frontier", "fios"] {
         rules.push(CategoryRule::new("cat_expense_utilities".into(), pattern.into(), "description".into()));
     }
 

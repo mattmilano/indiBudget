@@ -64,6 +64,8 @@ pub fn run() {
             // Category Rules & Auto-Categorize
             commands::create_category_rule,
             commands::get_category_rules,
+            commands::get_user_category_rules,
+            commands::delete_user_category_rule,
             commands::auto_categorize_transactions,
             commands::batch_categorize_transactions,
             // Notifications

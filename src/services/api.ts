@@ -31,6 +31,7 @@ import type {
   BackupMetadata,
   AutoCategorizeResult,
   BatchCategorizeResult,
+  UserCategoryRule,
 } from '../types';
 
 // Initialization
@@ -142,6 +143,12 @@ export const createCategoryRule = (categoryId: string, pattern: string, field?: 
   invoke<CategoryRule>('create_category_rule', { categoryId, pattern, field });
 
 export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules');
+
+// User Category Rules (custom rules created by batch categorization)
+export const getUserCategoryRules = () => invoke<UserCategoryRule[]>('get_user_category_rules');
+
+export const deleteUserCategoryRule = (ruleId: string) =>
+  invoke<boolean>('delete_user_category_rule', { ruleId });
 
 // Auto-Categorize
 export const autoCategorizeTransactions = () =>
