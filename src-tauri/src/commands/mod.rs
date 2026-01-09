@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
-use crate::database::{self, repository, Database, DbResult};
+use crate::database::{self, repository, Database, DatabaseError, DbResult};
 use crate::models::*;
 use crate::services::{self, encryption::EncryptionService, importer, Categorizer};
 
