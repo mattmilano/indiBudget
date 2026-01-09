@@ -199,7 +199,9 @@ onMounted(async () => {
   await Promise.all([
     accountsStore.fetchAccounts(),
     categoriesStore.fetchCategories(),
-    transactionsStore.fetchTransactions(),
+    // Explicitly pass empty filter to fetch ALL transactions
+    // (Dashboard may have set a month filter that we need to clear)
+    transactionsStore.fetchTransactions({}),
   ]);
   if (accountsStore.accounts.length > 0) {
     newTransaction.value.account_id = accountsStore.accounts[0].id;
