@@ -36,6 +36,15 @@ fn account_from_row(row: &Row) -> rusqlite::Result<Account> {
 }
 
 fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
+    // Handle potentially NULL columns gracefully
+    let status_str: Option<String> = row.get(9)?;
+    let status = status_str
+        .map(|s| TransactionStatus::from_str(&s))
+        .unwrap_or(TransactionStatus::Cleared);
+
+    let created_at_str: Option<String> = row.get(15)?;
+    let updated_at_str: Option<String> = row.get(16)?;
+
     Ok(Transaction {
         id: row.get(0)?,
         account_id: row.get(1)?,
@@ -46,14 +55,14 @@ fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
         category_id: row.get(6)?,
         payee: row.get(7)?,
         notes: row.get(8)?,
-        status: TransactionStatus::from_str(row.get::<_, String>(9)?.as_str()),
-        is_split: row.get::<_, i32>(10)? == 1,
+        status,
+        is_split: row.get::<_, i32>(10).unwrap_or(0) == 1,
         parent_transaction_id: row.get(11)?,
         recurring_id: row.get(12)?,
         transfer_account_id: row.get(13)?,
         imported_id: row.get(14)?,
-        created_at: parse_datetime(&row.get::<_, String>(15)?),
-        updated_at: parse_datetime(&row.get::<_, String>(16)?),
+        created_at: created_at_str.map(|s| parse_datetime(&s)).unwrap_or_else(Utc::now),
+        updated_at: updated_at_str.map(|s| parse_datetime(&s)).unwrap_or_else(Utc::now),
     })
 }
 
@@ -246,44 +255,59 @@ pub fn get_transactions(conn: &Connection, filter: &TransactionFilter) -> DbResu
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| transaction_from_row(row))?;
 
-    let transactions: Vec<Transaction> = rows
-        .filter_map(|r| r.ok())
-        .filter(|tx| {
-            if let Some(ref account_ids) = filter.account_ids {
-                if !account_ids.contains(&tx.account_id) {
-                    return false;
-                }
-            }
-            if let Some(ref category_ids) = filter.category_ids {
-                if let Some(ref cat_id) = tx.category_id {
-                    if !category_ids.contains(cat_id) {
-                        return false;
+    let mut transactions = Vec::new();
+    let mut error_count = 0;
+
+    for result in rows {
+        match result {
+            Ok(tx) => {
+                // Apply filters
+                if let Some(ref account_ids) = filter.account_ids {
+                    if !account_ids.contains(&tx.account_id) {
+                        continue;
                     }
-                } else {
-                    return false;
+                }
+                if let Some(ref category_ids) = filter.category_ids {
+                    if let Some(ref cat_id) = tx.category_id {
+                        if !category_ids.contains(cat_id) {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                if let Some(start) = filter.start_date {
+                    if tx.date < start {
+                        continue;
+                    }
+                }
+                if let Some(end) = filter.end_date {
+                    if tx.date > end {
+                        continue;
+                    }
+                }
+                if let Some(ref search) = filter.search_text {
+                    let search_lower = search.to_lowercase();
+                    if !tx.description.to_lowercase().contains(&search_lower)
+                        && !tx.payee.as_ref().map_or(false, |p| p.to_lowercase().contains(&search_lower))
+                    {
+                        continue;
+                    }
+                }
+                transactions.push(tx);
+            }
+            Err(e) => {
+                error_count += 1;
+                if error_count <= 5 {
+                    eprintln!("Error parsing transaction row: {:?}", e);
                 }
             }
-            if let Some(start) = filter.start_date {
-                if tx.date < start {
-                    return false;
-                }
-            }
-            if let Some(end) = filter.end_date {
-                if tx.date > end {
-                    return false;
-                }
-            }
-            if let Some(ref search) = filter.search_text {
-                let search_lower = search.to_lowercase();
-                if !tx.description.to_lowercase().contains(&search_lower)
-                    && !tx.payee.as_ref().map_or(false, |p| p.to_lowercase().contains(&search_lower))
-                {
-                    return false;
-                }
-            }
-            true
-        })
-        .collect();
+        }
+    }
+
+    if error_count > 0 {
+        eprintln!("Total transaction parsing errors: {}", error_count);
+    }
 
     Ok(transactions)
 }
