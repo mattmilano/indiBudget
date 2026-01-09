@@ -70,32 +70,26 @@ impl Database {
     fn seed_default_data(&self) -> DbResult<()> {
         let conn = self.connection.lock().unwrap();
 
-        let count: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM categories WHERE is_system = 1",
-            [],
-            |row| row.get(0),
-        )?;
-
-        if count == 0 {
-            let categories = crate::models::category::get_default_categories();
-            for cat in categories {
-                conn.execute(
-                    "INSERT INTO categories (id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    rusqlite::params![
-                        cat.id,
-                        cat.name,
-                        cat.category_type.as_str(),
-                        cat.color,
-                        cat.icon,
-                        cat.parent_id,
-                        cat.is_system,
-                        cat.is_active,
-                        cat.created_at.to_rfc3339(),
-                        cat.updated_at.to_rfc3339(),
-                    ],
-                )?;
-            }
+        // Ensure all default categories exist (use INSERT OR IGNORE to handle existing ones)
+        // This allows new categories to be added in updates without breaking existing databases
+        let categories = crate::models::category::get_default_categories();
+        for cat in categories {
+            conn.execute(
+                "INSERT OR IGNORE INTO categories (id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    cat.id,
+                    cat.name,
+                    cat.category_type.as_str(),
+                    cat.color,
+                    cat.icon,
+                    cat.parent_id,
+                    cat.is_system,
+                    cat.is_active,
+                    cat.created_at.to_rfc3339(),
+                    cat.updated_at.to_rfc3339(),
+                ],
+            )?;
         }
 
         Ok(())

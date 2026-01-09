@@ -817,12 +817,31 @@ pub fn get_calendar_events(
 pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCategorizeResult, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
+            // Get all existing categories first - only use valid category IDs
+            let categories = repository::get_all_categories(conn)?;
+            let valid_category_ids: std::collections::HashSet<String> = categories
+                .iter()
+                .map(|c| c.id.clone())
+                .collect();
+            let category_map: std::collections::HashMap<String, String> = categories
+                .into_iter()
+                .map(|c| (c.id, c.name))
+                .collect();
+
             // Get all rules (user-defined + default)
             let user_rules = repository::get_category_rules(conn)?;
 
             // Combine with default rules, user rules take priority
-            let mut all_rules = user_rules;
-            all_rules.extend(services::categorizer::get_default_rules());
+            // Filter out rules that reference non-existent categories
+            let mut all_rules: Vec<_> = user_rules
+                .into_iter()
+                .filter(|r| valid_category_ids.contains(&r.category_id))
+                .collect();
+            all_rules.extend(
+                services::categorizer::get_default_rules()
+                    .into_iter()
+                    .filter(|r| valid_category_ids.contains(&r.category_id))
+            );
 
             let categorizer = Categorizer::new(all_rules);
 
@@ -836,23 +855,21 @@ pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCatego
             for tx in &transactions {
                 if tx.category_id.is_none() {
                     if let Some(category_id) = categorizer.categorize(tx) {
-                        // Update the transaction with the category
-                        let mut updated_tx = tx.clone();
-                        updated_tx.category_id = Some(category_id.clone());
-                        repository::update_transaction(conn, &updated_tx)?;
+                        // Double-check the category exists (shouldn't be needed but be safe)
+                        if valid_category_ids.contains(&category_id) {
+                            // Update the transaction with the category
+                            let mut updated_tx = tx.clone();
+                            updated_tx.category_id = Some(category_id.clone());
 
-                        categorized_count += 1;
-                        *category_breakdown.entry(category_id).or_insert(0) += 1;
+                            // Continue processing even if one update fails
+                            if repository::update_transaction(conn, &updated_tx).is_ok() {
+                                categorized_count += 1;
+                                *category_breakdown.entry(category_id).or_insert(0) += 1;
+                            }
+                        }
                     }
                 }
             }
-
-            // Get category names for the breakdown
-            let categories = repository::get_all_categories(conn)?;
-            let category_map: std::collections::HashMap<String, String> = categories
-                .into_iter()
-                .map(|c| (c.id, c.name))
-                .collect();
 
             let breakdown: Vec<CategoryBreakdown> = category_breakdown
                 .into_iter()
