@@ -332,6 +332,7 @@ export interface DetectedRecurring {
   confidence: number;
   account_id: string;
   category_id?: string;
+  suggested_category_id?: string;
 }
 
 export interface CancelledSubscription {

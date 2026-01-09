@@ -66,6 +66,34 @@ impl Categorizer {
         best_match.map(|(rule, _)| rule.category_id.clone())
     }
 
+    /// Categorize based on plain text (for use with recurring pattern detection)
+    /// This matches against rules that use the description field
+    pub fn categorize_text(&self, text: &str) -> Option<String> {
+        let mut best_match: Option<(&CompiledRule, i32)> = None;
+        let text_lower = text.to_lowercase();
+
+        for rule in &self.rules {
+            // Only match description-based rules for text matching
+            if rule.field != "description" {
+                continue;
+            }
+
+            let matches = if let Some(ref regex) = rule.regex {
+                regex.is_match(&text_lower)
+            } else {
+                text_lower.contains(&rule.pattern)
+            };
+
+            if matches {
+                if best_match.is_none() || rule.priority > best_match.unwrap().1 {
+                    best_match = Some((rule, rule.priority));
+                }
+            }
+        }
+
+        best_match.map(|(rule, _)| rule.category_id.clone())
+    }
+
     pub fn categorize_batch(&self, transactions: &mut [Transaction]) {
         for tx in transactions.iter_mut() {
             if tx.category_id.is_none() {

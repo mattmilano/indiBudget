@@ -426,6 +426,13 @@ function calculateYearlySavings(amount: string, frequency: string): string {
                     <div v-if="detected.typical_day_of_month" class="text-gray-600 dark:text-gray-400">
                       Typical day: {{ detected.typical_day_of_month }}
                     </div>
+                    <div v-if="detected.category_id || detected.suggested_category_id" class="text-gray-600 dark:text-gray-400 col-span-2">
+                      Category:
+                      <span class="font-medium" :class="detected.category_id ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'">
+                        {{ getCategoryName(detected.category_id || detected.suggested_category_id) }}
+                      </span>
+                      <span v-if="!detected.category_id && detected.suggested_category_id" class="text-xs text-gray-500 ml-1">(suggested)</span>
+                    </div>
                   </div>
                 </div>
                 <div class="flex gap-2 ml-4">

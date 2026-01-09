@@ -394,7 +394,11 @@ pub fn detect_recurring_patterns(state: State<AppState>) -> Result<Vec<services:
             let transactions = repository::get_transactions(conn, &TransactionFilter::default())?;
 
             // Detect recurring patterns
-            let detected = services::recurring_detector::detect_recurring_transactions(&transactions);
+            let mut detected = services::recurring_detector::detect_recurring_transactions(&transactions);
+
+            // Get category rules and enhance patterns with suggestions
+            let rules = repository::get_category_rules(conn)?;
+            services::recurring_detector::enhance_with_category_suggestions(&mut detected, &rules);
 
             Ok(detected)
         })

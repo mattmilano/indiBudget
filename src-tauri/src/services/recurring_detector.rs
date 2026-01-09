@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::models::{RecurrenceFrequency, Transaction, TransactionType};
+use crate::models::{CategoryRule, RecurrenceFrequency, Transaction, TransactionType};
 
 /// A detected recurring transaction pattern
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +32,8 @@ pub struct DetectedRecurring {
     pub account_id: String,
     /// Category ID if consistently categorized
     pub category_id: Option<String>,
+    /// Suggested category ID from categorization rules (used when no consistent category exists)
+    pub suggested_category_id: Option<String>,
 }
 
 /// Analyze transactions and detect recurring patterns
@@ -198,6 +200,7 @@ fn analyze_pattern(description: &str, transactions: &[&Transaction]) -> Option<D
         confidence,
         account_id,
         category_id,
+        suggested_category_id: None, // Will be populated by enhance_with_category_suggestions
     })
 }
 
@@ -250,6 +253,36 @@ fn calculate_confidence(
     confidence += 0.1;
 
     confidence
+}
+
+/// Enhance detected recurring patterns with category suggestions from rules
+/// This uses the categorization rules to suggest categories for patterns
+/// that don't have a consistent category from their transactions
+pub fn enhance_with_category_suggestions(
+    detected: &mut Vec<DetectedRecurring>,
+    rules: &[CategoryRule],
+) {
+    use crate::services::categorizer::Categorizer;
+
+    let categorizer = Categorizer::new(rules.to_vec());
+
+    for pattern in detected.iter_mut() {
+        // Skip if already has a consistent category
+        if pattern.category_id.is_some() {
+            continue;
+        }
+
+        // Try to match using the description or payee
+        // Create a temporary transaction-like structure for matching
+        let description = pattern.payee.as_ref().unwrap_or(&pattern.description);
+
+        // Try matching against description patterns
+        if let Some(category_id) = categorizer.categorize_text(description) {
+            pattern.suggested_category_id = Some(category_id);
+        } else if let Some(category_id) = categorizer.categorize_text(&pattern.description) {
+            pattern.suggested_category_id = Some(category_id);
+        }
+    }
 }
 
 #[cfg(test)]
