@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
 import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult, UserCategoryRule } from '../types';
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
@@ -31,6 +31,11 @@ const showRulesModal = ref(false);
 const userRules = ref<UserCategoryRule[]>([]);
 const loadingRules = ref(false);
 const deletingRuleId = ref<string | null>(null);
+
+// Pagination state
+const currentPage = ref(1);
+const pageSize = ref(50);
+const pageSizeOptions = [25, 50, 100, 200];
 
 // Date range filters
 type DatePreset = 'all' | 'this-month' | 'last-month' | 'this-quarter' | 'this-year' | 'last-year' | 'custom';
@@ -131,6 +136,34 @@ const filteredTransactions = computed(() => {
   }
 
   return result;
+});
+
+// Pagination computed properties
+const totalPages = computed(() => Math.ceil(filteredTransactions.value.length / pageSize.value));
+
+const paginatedTransactions = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return filteredTransactions.value.slice(start, end);
+});
+
+// Reset to page 1 when filters change
+function resetPagination() {
+  currentPage.value = 1;
+}
+
+// Watch for filter changes to reset pagination
+const goToPage = (page: number) => {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page;
+    // Scroll to top of transaction list
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+// Reset pagination when filters change
+watch([searchQuery, filterAccountId, filterCategoryId, filterType, datePreset, customStartDate, customEndDate, pageSize], () => {
+  currentPage.value = 1;
 });
 
 // Summary stats for filtered transactions
@@ -479,7 +512,7 @@ onMounted(async () => {
       </div>
       <div v-else class="divide-y divide-gray-200 dark:divide-gray-700">
         <div
-          v-for="tx in filteredTransactions"
+          v-for="tx in paginatedTransactions"
           :key="tx.id"
           class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
         >
@@ -527,6 +560,82 @@ onMounted(async () => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div v-if="filteredTransactions.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow mt-4 p-4">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <!-- Results info -->
+        <div class="text-sm text-gray-500 dark:text-gray-400">
+          Showing {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredTransactions.length) }}
+          of {{ filteredTransactions.length.toLocaleString() }} transactions
+        </div>
+
+        <!-- Page controls -->
+        <div class="flex items-center gap-2">
+          <!-- Page size selector -->
+          <select
+            v-model="pageSize"
+            class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          >
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} per page</option>
+          </select>
+
+          <!-- Previous button -->
+          <button
+            @click="goToPage(currentPage - 1)"
+            :disabled="currentPage === 1"
+            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+
+          <!-- Page numbers -->
+          <div class="flex items-center gap-1">
+            <button
+              v-if="currentPage > 2"
+              @click="goToPage(1)"
+              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              1
+            </button>
+            <span v-if="currentPage > 3" class="px-2 text-gray-400">...</span>
+
+            <template v-for="page in Math.min(5, totalPages)" :key="page">
+              <button
+                v-if="Math.abs(page + Math.max(0, currentPage - 3) - currentPage) <= 1 || totalPages <= 5"
+                @click="goToPage(totalPages <= 5 ? page : page + Math.max(0, currentPage - 3))"
+                :class="[
+                  'px-3 py-1 text-sm border rounded',
+                  (totalPages <= 5 ? page : page + Math.max(0, currentPage - 3)) === currentPage
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ]"
+              >
+                {{ totalPages <= 5 ? page : page + Math.max(0, currentPage - 3) }}
+              </button>
+            </template>
+
+            <span v-if="currentPage < totalPages - 2 && totalPages > 5" class="px-2 text-gray-400">...</span>
+            <button
+              v-if="currentPage < totalPages - 1 && totalPages > 5"
+              @click="goToPage(totalPages)"
+              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              {{ totalPages }}
+            </button>
+          </div>
+
+          <!-- Next button -->
+          <button
+            @click="goToPage(currentPage + 1)"
+            :disabled="currentPage === totalPages"
+            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
         </div>
       </div>
     </div>
@@ -884,7 +993,7 @@ onMounted(async () => {
 
     <!-- Loading Overlay for Long Operations -->
     <div
-      v-if="categorizing"
+      v-if="categorizing || transactionsStore.loading"
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
     >
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
@@ -894,9 +1003,14 @@ onMounted(async () => {
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
         </div>
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Auto-Categorizing...</h3>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          {{ categorizing ? 'Auto-Categorizing...' : 'Loading Transactions...' }}
+        </h3>
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          Analyzing transactions and applying category rules. This may take a moment for large datasets.
+          {{ categorizing
+            ? 'Analyzing transactions and applying category rules. This may take a moment for large datasets.'
+            : 'Fetching your transactions. This may take a moment for large datasets.'
+          }}
         </p>
       </div>
     </div>

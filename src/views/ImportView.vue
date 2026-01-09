@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAccountsStore, useTransactionsStore } from '../stores';
@@ -59,6 +59,7 @@ async function selectFile() {
     selectedFile.value = selected;
     try {
       loading.value = true;
+      await nextTick(); // Ensure loading overlay renders
       columns.value = await api.detectImportColumns(selected);
 
       // Check if this is an auto-format (OFX/QFX/QIF) that doesn't need column mapping
@@ -118,6 +119,7 @@ async function previewImport() {
 
   try {
     loading.value = true;
+    await nextTick(); // Ensure loading overlay renders
     const mappingToSend = { ...mapping.value };
     if (!useSeparateColumns.value) {
       mappingToSend.debit_column = undefined;
@@ -142,6 +144,8 @@ async function performImport() {
   try {
     loading.value = true;
     errorMessage.value = '';
+    // Wait for DOM to update and show loading overlay before starting heavy operation
+    await nextTick();
     const mappingToSend = { ...mapping.value };
     if (!useSeparateColumns.value) {
       mappingToSend.debit_column = undefined;
