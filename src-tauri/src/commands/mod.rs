@@ -901,6 +901,62 @@ pub struct CategoryBreakdown {
     pub count: usize,
 }
 
+// Batch Categorize Command - allows re-categorizing transactions by keyword
+#[tauri::command]
+pub fn batch_categorize_transactions(
+    state: State<AppState>,
+    keyword: String,
+    category_id: String,
+    match_uncategorized_only: bool,
+) -> Result<BatchCategorizeResult, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            // Verify the category exists
+            let _category = repository::get_category(conn, &category_id)
+                .map_err(|_| DatabaseError::Other("Category not found".into()))?;
+
+            // Get all transactions
+            let filter = TransactionFilter::default();
+            let transactions = repository::get_transactions(conn, &filter)?;
+
+            let keyword_lower = keyword.to_lowercase();
+            let mut updated_count = 0;
+
+            for tx in &transactions {
+                // Skip if we only want uncategorized and this one has a category
+                if match_uncategorized_only && tx.category_id.is_some() {
+                    continue;
+                }
+
+                // Check if description or payee matches the keyword
+                let description_matches = tx.description.to_lowercase().contains(&keyword_lower);
+                let payee_matches = tx.payee.as_ref()
+                    .map_or(false, |p| p.to_lowercase().contains(&keyword_lower));
+
+                if description_matches || payee_matches {
+                    let mut updated_tx = tx.clone();
+                    updated_tx.category_id = Some(category_id.clone());
+
+                    if repository::update_transaction(conn, &updated_tx).is_ok() {
+                        updated_count += 1;
+                    }
+                }
+            }
+
+            Ok(BatchCategorizeResult {
+                total_updated: updated_count,
+                keyword: keyword.clone(),
+            })
+        })
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchCategorizeResult {
+    pub total_updated: usize,
+    pub keyword: String,
+}
+
 // Category Rules Commands
 #[tauri::command]
 pub fn create_category_rule(state: State<AppState>, category_id: String, pattern: String, field: Option<String>) -> Result<CategoryRule, String> {

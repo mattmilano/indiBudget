@@ -115,6 +115,18 @@ impl CategoryRule {
             created_at: Utc::now(),
         }
     }
+
+    pub fn with_priority(category_id: String, pattern: String, field: String, priority: i32) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            category_id,
+            pattern,
+            field,
+            is_regex: false,
+            priority,
+            created_at: Utc::now(),
+        }
+    }
 }
 
 pub fn get_default_categories() -> Vec<Category> {
@@ -155,6 +167,11 @@ pub fn get_default_categories() -> Vec<Category> {
         Category::system("cat_expense_apps", "Apps & Software", CategoryType::Expense, "#9d174d"),
         Category::system("cat_expense_music", "Music Services", CategoryType::Expense, "#831843"),
         Category::system("cat_expense_gaming", "Gaming Subscriptions", CategoryType::Expense, "#701a75"),
+
+        // Financial
+        Category::system("cat_expense_credit_card", "Credit Card Payments", CategoryType::Expense, "#7c3aed"),
+        Category::system("cat_expense_loan", "Loan Payments", CategoryType::Expense, "#6d28d9"),
+        Category::system("cat_expense_transfer", "Transfers", CategoryType::Expense, "#5b21b6"),
 
         // Other
         Category::system("cat_expense_personal", "Personal Care", CategoryType::Expense, "#a855f7"),

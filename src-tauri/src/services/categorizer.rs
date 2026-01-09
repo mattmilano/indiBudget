@@ -78,6 +78,45 @@ impl Categorizer {
 pub fn get_default_rules() -> Vec<CategoryRule> {
     let mut rules = Vec::new();
 
+    // ============================================================
+    // HIGH PRIORITY RULES (priority 10) - Specific patterns that
+    // should override generic matches
+    // ============================================================
+
+    // Credit Card Payments - HIGH PRIORITY to catch before other patterns
+    for pattern in [
+        "capital one", "capitalone", "chase card", "chase credit", "discover card",
+        "american express", "amex", "citi card", "citicard", "barclays card",
+        "bank of america card", "wells fargo card", "credit card payment",
+        "card payment", "card services", "synchrony", "credit one",
+    ] {
+        rules.push(CategoryRule::with_priority("cat_expense_credit_card".into(), pattern.into(), "description".into(), 10));
+    }
+
+    // Fuel at stores - HIGH PRIORITY to override grocery store matches
+    // These patterns specifically identify fuel purchases at multi-purpose stores
+    for pattern in [
+        "kroger fuel", "walmart fuel", "costco gas", "costco fuel", "sam's fuel",
+        "sam's gas", "safeway fuel", "albertsons fuel", "heb fuel", "h-e-b fuel",
+        "meijer fuel", "giant fuel", "stop & shop fuel", "bj's gas", "bj's fuel",
+        "murphy usa", "murphy oil", "kum & go", "kwik trip fuel", "wawa gas",
+        "sheetz gas", "raceway", "thorntons", "getgo", "giant eagle fuel",
+    ] {
+        rules.push(CategoryRule::with_priority("cat_expense_gas".into(), pattern.into(), "description".into(), 10));
+    }
+
+    // Loan Payments - HIGH PRIORITY
+    for pattern in [
+        "student loan", "car loan", "auto loan", "personal loan", "loan payment",
+        "sallie mae", "navient", "nelnet", "great lakes", "fedloan", "sofi loan",
+    ] {
+        rules.push(CategoryRule::with_priority("cat_expense_loan".into(), pattern.into(), "description".into(), 10));
+    }
+
+    // ============================================================
+    // NORMAL PRIORITY RULES (priority 0) - Generic patterns
+    // ============================================================
+
     // Income - Salary
     for pattern in ["payroll", "direct deposit", "salary", "wages", "paychex", "adp", "gusto payroll"] {
         rules.push(CategoryRule::new("cat_income_salary".into(), pattern.into(), "description".into()));
@@ -103,18 +142,18 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
         rules.push(CategoryRule::new("cat_expense_insurance".into(), pattern.into(), "description".into()));
     }
 
-    // Utilities
+    // Utilities (note: "gas bill" and "natural gas" are utilities, not fuel)
     for pattern in ["electric", "electricity", "power company", "pge", "pg&e", "con edison", "duke energy", "water bill", "water utility", "sewer", "gas bill", "natural gas", "internet", "broadband", "comcast", "xfinity", "spectrum", "cox", "centurylink", "frontier", "t-mobile", "verizon", "at&t", "sprint", "metro pcs", "mint mobile"] {
         rules.push(CategoryRule::new("cat_expense_utilities".into(), pattern.into(), "description".into()));
     }
 
-    // Groceries
+    // Groceries (removed stores that also sell fuel - those need HIGH PRIORITY fuel rules)
     for pattern in ["grocery", "supermarket", "whole foods", "trader joe", "safeway", "kroger", "publix", "albertsons", "aldi", "food lion", "harris teeter", "wegmans", "h-e-b", "meijer", "stop & shop", "giant", "food mart", "fresh market", "sprouts", "instacart", "shipt", "walmart grocery", "amazon fresh", "costco wholesale", "sam's club"] {
         rules.push(CategoryRule::new("cat_expense_groceries".into(), pattern.into(), "description".into()));
     }
 
     // Dining Out - Restaurants
-    for pattern in ["restaurant", "ristorante", "bistro", "cafe", "diner", "grill", "kitchen", "eatery", "pizzeria", "sushi", "thai", "chinese", "mexican", "italian", "indian", "taqueria", "burrito", "tacos"] {
+    for pattern in ["restaurant", "ristorante", "bistro", "diner", "grill", "kitchen", "eatery", "pizzeria", "sushi", "thai", "chinese", "mexican", "italian", "indian", "taqueria", "burrito", "tacos"] {
         rules.push(CategoryRule::new("cat_expense_dining".into(), pattern.into(), "description".into()));
     }
 
@@ -124,17 +163,17 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Dining - Delivery
-    for pattern in ["doordash", "uber eats", "grubhub", "postmates", "seamless", "caviar", "gopuff", "instacart", "delivery.com", "slice pizza"] {
+    for pattern in ["doordash", "uber eats", "grubhub", "postmates", "seamless", "caviar", "gopuff", "delivery.com", "slice pizza"] {
         rules.push(CategoryRule::new("cat_expense_dining".into(), pattern.into(), "description".into()));
     }
 
-    // Coffee & Cafes
+    // Coffee & Cafes (removed generic "cafe" to avoid matching non-coffee places)
     for pattern in ["starbucks", "dunkin", "peet's coffee", "coffee bean", "blue bottle", "philz", "dutch bros", "caribou coffee", "tim hortons", "cafe nero", "costa coffee", "coffee shop", "espresso"] {
         rules.push(CategoryRule::new("cat_expense_coffee".into(), pattern.into(), "description".into()));
     }
 
-    // Gas & Fuel
-    for pattern in ["shell", "chevron", "exxon", "mobil", "bp", "arco", "sunoco", "circle k", "speedway", "7-eleven fuel", "wawa fuel", "sheetz fuel", "quiktrip", "racetrac", "pilot", "flying j", "love's travel", "marathon", "valero", "gas station", "fuel", "petrol"] {
+    // Gas & Fuel - gas station brands and generic fuel terms
+    for pattern in ["shell", "chevron", "exxon", "mobil", "bp", "arco", "sunoco", "circle k", "speedway", "7-eleven", "quiktrip", "racetrac", "pilot", "flying j", "love's travel", "marathon", "valero", "gas station", "fuel center", "petrol", "gasoline"] {
         rules.push(CategoryRule::new("cat_expense_gas".into(), pattern.into(), "description".into()));
     }
 
@@ -189,7 +228,7 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Personal Care
-    for pattern in ["salon", "barber", "haircut", "spa", "massage", "manicure", "pedicure", "nail salon", "waxing", "ulta", "sephora", "beauty", "cosmetic", "skincare", "dermatologist"] {
+    for pattern in ["salon", "barber", "haircut", "spa", "massage", "manicure", "pedicure", "nail salon", "waxing", "ulta", "sephora", "beauty", "cosmetic", "skincare"] {
         rules.push(CategoryRule::new("cat_expense_personal".into(), pattern.into(), "description".into()));
     }
 
@@ -204,12 +243,12 @@ pub fn get_default_rules() -> Vec<CategoryRule> {
     }
 
     // Pets
-    for pattern in ["petco", "petsmart", "pet supplies", "veterinary", "vet clinic", "dog", "cat food", "pet food", "chewy.com", "rover", "wag walking", "pet boarding", "grooming"] {
+    for pattern in ["petco", "petsmart", "pet supplies", "veterinary", "vet clinic", "dog food", "cat food", "pet food", "chewy.com", "rover", "wag walking", "pet boarding"] {
         rules.push(CategoryRule::new("cat_expense_pets".into(), pattern.into(), "description".into()));
     }
 
     // Gifts & Donations
-    for pattern in ["gift", "donation", "charity", "gofundme", "patreon", "kickstarter", "indiegogo", "red cross", "salvation army", "goodwill", "united way", "nonprofit"] {
+    for pattern in ["donation", "charity", "gofundme", "patreon", "kickstarter", "indiegogo", "red cross", "salvation army", "goodwill", "united way", "nonprofit"] {
         rules.push(CategoryRule::new("cat_expense_gifts".into(), pattern.into(), "description".into()));
     }
 

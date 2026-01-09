@@ -65,6 +65,7 @@ pub fn run() {
             commands::create_category_rule,
             commands::get_category_rules,
             commands::auto_categorize_transactions,
+            commands::batch_categorize_transactions,
             // Notifications
             commands::get_bill_reminders,
             commands::send_bill_notification,

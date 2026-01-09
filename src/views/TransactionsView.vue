@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
-import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult } from '../types';
+import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult } from '../types';
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import * as api from '../services/api';
 
@@ -17,6 +17,14 @@ const searchQuery = ref('');
 const filterAccountId = ref('');
 const filterCategoryId = ref('');
 const filterType = ref<TransactionType | ''>('');
+
+// Batch categorization state
+const showBatchModal = ref(false);
+const batchKeyword = ref('');
+const batchCategoryId = ref('');
+const batchUncategorizedOnly = ref(true);
+const batchProcessing = ref(false);
+const batchResult = ref<BatchCategorizeResult | null>(null);
 
 // Date range filters
 type DatePreset = 'all' | 'this-month' | 'last-month' | 'this-quarter' | 'this-year' | 'last-year' | 'custom';
@@ -105,7 +113,11 @@ const filteredTransactions = computed(() => {
   }
 
   if (filterCategoryId.value) {
-    result = result.filter(t => t.category_id === filterCategoryId.value);
+    if (filterCategoryId.value === '__uncategorized__') {
+      result = result.filter(t => !t.category_id);
+    } else {
+      result = result.filter(t => t.category_id === filterCategoryId.value);
+    }
   }
 
   if (filterType.value) {
@@ -195,6 +207,59 @@ const uncategorizedCount = computed(() => {
   return filteredTransactions.value.filter(t => !t.category_id).length;
 });
 
+// Preview matching transactions for batch categorization
+const batchPreviewTransactions = computed(() => {
+  if (!batchKeyword.value.trim()) return [];
+  const keyword = batchKeyword.value.toLowerCase();
+  return transactionsStore.sortedTransactions.filter(t => {
+    // Check uncategorized filter
+    if (batchUncategorizedOnly.value && t.category_id) return false;
+    // Check keyword match
+    const descMatch = t.description.toLowerCase().includes(keyword);
+    const payeeMatch = t.payee?.toLowerCase().includes(keyword) || false;
+    return descMatch || payeeMatch;
+  });
+});
+
+async function executeBatchCategorize() {
+  if (!batchKeyword.value.trim() || !batchCategoryId.value) {
+    alert('Please enter a keyword and select a category.');
+    return;
+  }
+
+  batchProcessing.value = true;
+  try {
+    const result = await api.batchCategorizeTransactions(
+      batchKeyword.value,
+      batchCategoryId.value,
+      batchUncategorizedOnly.value
+    );
+    batchResult.value = result;
+
+    if (result.total_updated > 0) {
+      // Refresh transactions to show updated categories
+      await transactionsStore.fetchTransactions({});
+      alert(`Successfully categorized ${result.total_updated} transactions matching "${result.keyword}".`);
+      closeBatchModal();
+    } else {
+      alert('No matching transactions found to categorize.');
+    }
+  } catch (e) {
+    console.error('Failed to batch categorize:', e);
+    alert('Failed to batch categorize transactions.');
+  } finally {
+    batchProcessing.value = false;
+  }
+}
+
+function closeBatchModal() {
+  showBatchModal.value = false;
+  batchKeyword.value = '';
+  batchCategoryId.value = '';
+  batchUncategorizedOnly.value = true;
+  batchResult.value = null;
+}
+
 onMounted(async () => {
   await Promise.all([
     accountsStore.fetchAccounts(),
@@ -228,6 +293,15 @@ onMounted(async () => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
           </svg>
           {{ categorizing ? 'Categorizing...' : `Auto-Categorize (${uncategorizedCount})` }}
+        </button>
+        <button
+          @click="showBatchModal = true"
+          class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Batch Categorize
         </button>
         <button
           @click="showAddModal = true"
@@ -336,6 +410,7 @@ onMounted(async () => {
           class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value="">All Categories</option>
+          <option value="__uncategorized__">Uncategorized</option>
           <option v-for="category in categoriesStore.categories" :key="category.id" :value="category.id">
             {{ category.name }}
           </option>
@@ -550,6 +625,120 @@ onMounted(async () => {
             class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Done
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Categorize Modal -->
+    <div
+      v-if="showBatchModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      @click.self="closeBatchModal"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3">
+          <div class="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
+            <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Batch Categorize Transactions</h3>
+        </div>
+        <div class="p-4 space-y-4">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            Find transactions by keyword and assign them to a category. This is useful for correcting mis-categorized transactions.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Keyword to match
+              </label>
+              <input
+                v-model="batchKeyword"
+                type="text"
+                placeholder="e.g., Capital One, Kroger Fuel"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Assign to category
+              </label>
+              <select
+                v-model="batchCategoryId"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="">Select a category...</option>
+                <option v-for="category in categoriesStore.categories" :key="category.id" :value="category.id">
+                  {{ category.name }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input
+              id="uncategorized-only"
+              v-model="batchUncategorizedOnly"
+              type="checkbox"
+              class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <label for="uncategorized-only" class="text-sm text-gray-700 dark:text-gray-300">
+              Only update uncategorized transactions (uncheck to re-categorize all matching)
+            </label>
+          </div>
+
+          <!-- Preview -->
+          <div v-if="batchKeyword.trim()" class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 border-b border-gray-200 dark:border-gray-600">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Preview: {{ batchPreviewTransactions.length }} matching transaction(s)
+              </span>
+            </div>
+            <div class="max-h-48 overflow-y-auto">
+              <div v-if="batchPreviewTransactions.length === 0" class="p-4 text-center text-gray-500 text-sm">
+                No matching transactions found.
+              </div>
+              <div v-else>
+                <div
+                  v-for="tx in batchPreviewTransactions.slice(0, 10)"
+                  :key="tx.id"
+                  class="px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 text-sm"
+                >
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-900 dark:text-white truncate">{{ tx.description }}</span>
+                    <span :class="tx.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'">
+                      {{ tx.transaction_type === 'income' ? '+' : '-' }}${{ parseFloat(tx.amount).toFixed(2) }}
+                    </span>
+                  </div>
+                  <div class="text-xs text-gray-500">{{ tx.date }}</div>
+                </div>
+                <div v-if="batchPreviewTransactions.length > 10" class="px-3 py-2 text-center text-sm text-gray-500">
+                  ... and {{ batchPreviewTransactions.length - 10 }} more
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+          <button
+            @click="closeBatchModal"
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            @click="executeBatchCategorize"
+            :disabled="!batchKeyword.trim() || !batchCategoryId || batchProcessing || batchPreviewTransactions.length === 0"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <svg v-if="batchProcessing" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {{ batchProcessing ? 'Applying...' : `Apply to ${batchPreviewTransactions.length} Transaction(s)` }}
           </button>
         </div>
       </div>

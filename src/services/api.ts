@@ -146,6 +146,10 @@ export const getCategoryRules = () => invoke<CategoryRule[]>('get_category_rules
 export const autoCategorizeTransactions = () =>
   invoke<AutoCategorizeResult>('auto_categorize_transactions');
 
+// Batch Categorize
+export const batchCategorizeTransactions = (keyword: string, categoryId: string, matchUncategorizedOnly: boolean) =>
+  invoke<BatchCategorizeResult>('batch_categorize_transactions', { keyword, categoryId, matchUncategorizedOnly });
+
 // Notifications
 export const getBillReminders = (daysAhead?: number) =>
   invoke<BillReminder[]>('get_bill_reminders', { daysAhead });

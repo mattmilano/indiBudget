@@ -363,3 +363,8 @@ export interface CategoryBreakdown {
   category_name: string;
   count: number;
 }
+
+export interface BatchCategorizeResult {
+  total_updated: number;
+  keyword: string;
+}
