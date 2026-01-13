@@ -113,7 +113,10 @@ impl Database {
 }
 
 pub fn get_database_path() -> PathBuf {
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "indibudget", "indiBudget") {
+    // On Linux: ~/.local/share/indibudget/
+    // On macOS: ~/Library/Application Support/com.indomitusgroup.indibudget/
+    // On Windows: C:\Users\<User>\AppData\Roaming\indomitusgroup\indibudget\
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "indomitusgroup", "indibudget") {
         proj_dirs.data_dir().join("indibudget.db")
     } else {
         PathBuf::from("indibudget.db")
