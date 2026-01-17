@@ -52,8 +52,9 @@ const summaryEvents = computed(() => {
 
         events.push({
           id: `collapse-header-${date}`,
-          title: `${summaryParts.join(' | ')}`,
+          title: `▼ ${summaryParts.join(' | ')}`,
           start: date,
+          order: -1, // Ensure collapse header appears first
           backgroundColor: '#6366f1',
           borderColor: '#6366f1',
           extendedProps: {
@@ -64,11 +65,13 @@ const summaryEvents = computed(() => {
       }
 
       // Show individual events when expanded
-      for (const event of dayEvents) {
+      for (let i = 0; i < dayEvents.length; i++) {
+        const event = dayEvents[i];
         events.push({
           id: event.id,
           title: `${event.transaction_type === 'income' ? '+' : '-'}$${parseFloat(event.amount).toFixed(0)} ${event.title}`,
           start: event.date,
+          order: i + 1, // Order after the collapse header
           backgroundColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
           borderColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
           extendedProps: {
@@ -98,6 +101,7 @@ const summaryEvents = computed(() => {
           id: `summary-expense-${date}`,
           title: `${expenseLabel}: $${totalExpense.toFixed(0)}`,
           start: date,
+          order: 0,
           backgroundColor: '#ef4444',
           borderColor: '#ef4444',
           extendedProps: {
@@ -121,6 +125,7 @@ const summaryEvents = computed(() => {
           id: `summary-income-${date}`,
           title: `${incomeLabel}: $${totalIncome.toFixed(0)}`,
           start: date,
+          order: 1,
           backgroundColor: '#22c55e',
           borderColor: '#22c55e',
           extendedProps: {
@@ -171,14 +176,9 @@ function renderEventContent(arg: any) {
   const isCollapseHeader = arg.event.extendedProps.isCollapseHeader;
 
   if (isCollapseHeader) {
-    // Render collapse header with down triangle
+    // Collapse header - triangle is in the title
     return {
-      html: `
-        <div class="event-content-wrapper collapse-header">
-          <span class="expand-triangle expanded">▼</span>
-          <span class="event-title">${arg.event.title}</span>
-        </div>
-      `
+      html: `<span class="event-title collapse-header-title">${arg.event.title}</span>`
     };
   }
 
@@ -405,6 +405,10 @@ watch([expandedDates, viewMode], updateCalendarEvents, { deep: true });
 .event-collapse-header {
   background-color: #6366f1 !important;
   border-color: #6366f1 !important;
+}
+
+.collapse-header-title {
+  font-weight: 600;
 }
 
 .event-summary {
