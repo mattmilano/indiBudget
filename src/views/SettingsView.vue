@@ -18,7 +18,16 @@ const settings = ref({
     reminderDays: 3,
     showAmount: true,
   },
+  backup: {
+    reminderEnabled: true,
+    reminderDays: 7,
+  },
 });
+
+// Backup reminder state
+const lastBackupDate = ref<string | null>(null);
+const backupOverdue = ref(false);
+const daysSinceBackup = ref(0);
 
 // Watch for theme changes and apply them
 watch(() => settings.value.theme, (newTheme) => {
@@ -49,6 +58,43 @@ const lastBackupInfo = ref<BackupMetadata | null>(null);
 const databasePath = ref('');
 const transactionCount = ref(0);
 
+function checkBackupStatus() {
+  const lastBackup = localStorage.getItem('indibudget-last-backup');
+  lastBackupDate.value = lastBackup;
+
+  if (lastBackup && settings.value.backup.reminderEnabled) {
+    const lastDate = new Date(lastBackup);
+    const now = new Date();
+    const diffTime = now.getTime() - lastDate.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    daysSinceBackup.value = diffDays;
+    backupOverdue.value = diffDays >= settings.value.backup.reminderDays;
+  } else if (!lastBackup) {
+    daysSinceBackup.value = -1; // Never backed up
+    backupOverdue.value = settings.value.backup.reminderEnabled;
+  } else {
+    backupOverdue.value = false;
+  }
+}
+
+function recordBackup() {
+  const now = new Date().toISOString();
+  localStorage.setItem('indibudget-last-backup', now);
+  checkBackupStatus();
+}
+
+function formatLastBackupDate() {
+  if (!lastBackupDate.value) return 'Never';
+  const date = new Date(lastBackupDate.value);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 onMounted(async () => {
   // Load saved settings from localStorage
   const saved = localStorage.getItem('indibudget-settings');
@@ -63,6 +109,9 @@ onMounted(async () => {
 
   // Sync theme from the composable (it handles its own storage)
   settings.value.theme = currentTheme.value;
+
+  // Check backup status
+  checkBackupStatus();
 
   // Load encryption status
   try {
@@ -165,6 +214,7 @@ async function exportData() {
     isBackupLoading.value = true;
     const metadata = await api.exportBackup(path);
     lastBackupInfo.value = metadata;
+    recordBackup(); // Track the backup date
     backupMessage.value = `Backup exported successfully! ${metadata.account_count} accounts, ${metadata.transaction_count} transactions.`;
     setTimeout(() => { backupMessage.value = ''; }, 5000);
   } catch (e) {
@@ -641,6 +691,26 @@ async function changeEncryptionPassword() {
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Data Management</h2>
         </div>
         <div class="p-4 space-y-4">
+          <!-- Backup reminder warning -->
+          <div
+            v-if="backupOverdue"
+            class="px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800"
+          >
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div class="flex-1">
+                <p class="font-medium text-yellow-800 dark:text-yellow-200">
+                  {{ daysSinceBackup < 0 ? 'You have never backed up your data!' : `It's been ${daysSinceBackup} days since your last backup` }}
+                </p>
+                <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  Regular backups protect your financial data from loss. Consider exporting a backup now.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <!-- Status messages -->
           <div
             v-if="backupMessage"
@@ -655,6 +725,12 @@ async function changeEncryptionPassword() {
             {{ backupError }}
           </div>
 
+          <!-- Last backup info -->
+          <div class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Last backup:</span>
+            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatLastBackupDate() }}</span>
+          </div>
+
           <div class="flex items-center justify-between">
             <div>
               <p class="font-medium text-gray-900 dark:text-white">Export Data</p>
@@ -663,7 +739,10 @@ async function changeEncryptionPassword() {
             <button
               @click="exportData"
               :disabled="isBackupLoading"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              :class="[
+                'px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50',
+                backupOverdue ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-blue-600 hover:bg-blue-700'
+              ]"
             >
               {{ isBackupLoading ? 'Exporting...' : 'Export' }}
             </button>
@@ -680,6 +759,39 @@ async function changeEncryptionPassword() {
             >
               {{ isBackupLoading ? 'Importing...' : 'Import' }}
             </button>
+          </div>
+
+          <!-- Backup reminder settings -->
+          <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Backup Reminders</h3>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm text-gray-900 dark:text-white">Enable Backup Reminders</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">Show warnings when backups are overdue</p>
+                </div>
+                <input
+                  v-model="settings.backup.reminderEnabled"
+                  type="checkbox"
+                  class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+                  @change="checkBackupStatus()"
+                />
+              </div>
+              <div v-if="settings.backup.reminderEnabled" class="flex items-center gap-3">
+                <label class="text-sm text-gray-600 dark:text-gray-400">Remind me if no backup in</label>
+                <select
+                  v-model="settings.backup.reminderDays"
+                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  @change="checkBackupStatus()"
+                >
+                  <option :value="1">1 day</option>
+                  <option :value="3">3 days</option>
+                  <option :value="7">7 days</option>
+                  <option :value="14">14 days</option>
+                  <option :value="30">30 days</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
