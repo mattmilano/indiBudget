@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useAccountsStore } from '../stores';
 import type { Account, CreateAccountRequest, AccountType } from '../types';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import ReconciliationModal from '../components/ReconciliationModal.vue';
 
 const accountsStore = useAccountsStore();
 
@@ -11,6 +12,10 @@ const showEditModal = ref(false);
 const showDeleteConfirm = ref(false);
 const accountToDelete = ref<Account | null>(null);
 const editingAccount = ref<Account | null>(null);
+
+// Reconciliation state
+const showReconcileModal = ref(false);
+const reconcileAccount = ref<Account | null>(null);
 
 const newAccount = ref<CreateAccountRequest>({
   name: '',
@@ -135,6 +140,17 @@ async function deleteAccount() {
   }
 }
 
+function openReconcile(account: Account) {
+  reconcileAccount.value = account;
+  showReconcileModal.value = true;
+}
+
+function handleReconcileComplete() {
+  showReconcileModal.value = false;
+  reconcileAccount.value = null;
+  accountsStore.fetchAccounts();
+}
+
 onMounted(() => {
   accountsStore.fetchAccounts();
 });
@@ -184,6 +200,15 @@ onMounted(() => {
             </div>
           </div>
           <div class="flex gap-1">
+            <button
+              @click="openReconcile(account)"
+              class="p-2 text-gray-400 hover:text-green-600 transition-colors"
+              title="Reconcile account"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
             <button
               @click="openEditModal(account)"
               class="p-2 text-gray-400 hover:text-blue-600 transition-colors"
@@ -436,6 +461,14 @@ onMounted(() => {
       @confirm="deleteAccount"
       @cancel="showDeleteConfirm = false"
       @update:show="showDeleteConfirm = $event"
+    />
+
+    <!-- Reconciliation Modal -->
+    <ReconciliationModal
+      :show="showReconcileModal"
+      :account="reconcileAccount"
+      @close="showReconcileModal = false; reconcileAccount = null"
+      @complete="handleReconcileComplete"
     />
   </div>
 </template>
