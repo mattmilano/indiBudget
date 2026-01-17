@@ -420,6 +420,16 @@ onMounted(async () => {
           {{ categorizing ? 'Categorizing...' : `Auto-Categorize (${uncategorizedCount})` }}
         </button>
         <button
+          @click="showBatchModal = true"
+          class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+          title="Batch categorize transactions by keyword"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Batch Categorize
+        </button>
+        <button
           @click="openRulesModal"
           class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
           title="Manage custom categorization rules"
@@ -1012,9 +1022,27 @@ onMounted(async () => {
           </button>
         </div>
         <div class="p-4">
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            These rules were created when you batch-categorized transactions. They are automatically applied to future imports.
-          </p>
+          <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 mb-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div class="flex-1">
+                <p class="text-sm text-indigo-800 dark:text-indigo-200">
+                  Rules are created automatically when you use Batch Categorize. Each rule matches a keyword and assigns transactions to a category during imports.
+                </p>
+                <button
+                  @click="showRulesModal = false; showBatchModal = true"
+                  class="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Create a new rule with Batch Categorize
+                </button>
+              </div>
+            </div>
+          </div>
 
           <!-- Loading state -->
           <div v-if="loadingRules" class="py-8 text-center text-gray-500">
@@ -1031,7 +1059,9 @@ onMounted(async () => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <p class="text-gray-500 dark:text-gray-400">No custom rules yet.</p>
-            <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">Use "Batch Categorize" to create rules.</p>
+            <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">
+              Click the button above to create your first rule.
+            </p>
           </div>
 
           <!-- Rules list -->

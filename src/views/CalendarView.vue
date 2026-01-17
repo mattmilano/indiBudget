@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -16,6 +16,105 @@ const selectedDate = ref<string | null>(null);
 const selectedEvents = ref<CalendarEvent[]>([]);
 const showEventModal = ref(false);
 
+// Track expanded dates for collapsed view
+const expandedDates = ref<Set<string>>(new Set());
+const viewMode = ref<'collapsed' | 'expanded'>('collapsed');
+
+// Group events by date
+const eventsByDate = computed(() => {
+  const grouped: Record<string, CalendarEvent[]> = {};
+  for (const event of calendarStore.events) {
+    if (!grouped[event.date]) {
+      grouped[event.date] = [];
+    }
+    grouped[event.date].push(event);
+  }
+  return grouped;
+});
+
+// Generate summary events for collapsed view
+const summaryEvents = computed(() => {
+  const events: any[] = [];
+
+  for (const [date, dayEvents] of Object.entries(eventsByDate.value)) {
+    const isExpanded = expandedDates.value.has(date) || viewMode.value === 'expanded';
+
+    if (isExpanded) {
+      // Show individual events when expanded
+      for (const event of dayEvents) {
+        events.push({
+          id: event.id,
+          title: `${event.transaction_type === 'income' ? '+' : '-'}$${parseFloat(event.amount).toFixed(0)} ${event.title}`,
+          start: event.date,
+          backgroundColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
+          borderColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
+          extendedProps: {
+            transaction_type: event.transaction_type,
+            amount: event.amount,
+            category_name: event.category_name,
+            is_recurring: event.is_recurring,
+            account_name: event.account_name,
+            isExpanded: true,
+            isSummary: false,
+          },
+        });
+      }
+    } else {
+      // Show collapsed summary
+      const expenses = dayEvents.filter(e => e.transaction_type === 'expense');
+      const income = dayEvents.filter(e => e.transaction_type === 'income');
+
+      // Summary for expenses
+      if (expenses.length > 0) {
+        const totalExpense = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const expenseLabel = expenses.length === 1
+          ? `1 bill`
+          : `${expenses.length} bills`;
+
+        events.push({
+          id: `summary-expense-${date}`,
+          title: `${expenseLabel}: $${totalExpense.toFixed(0)}`,
+          start: date,
+          backgroundColor: '#ef4444',
+          borderColor: '#ef4444',
+          extendedProps: {
+            transaction_type: 'expense',
+            isSummary: true,
+            summaryDate: date,
+            count: expenses.length,
+            total: totalExpense,
+          },
+        });
+      }
+
+      // Summary for income
+      if (income.length > 0) {
+        const totalIncome = income.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const incomeLabel = income.length === 1
+          ? `1 deposit`
+          : `${income.length} deposits`;
+
+        events.push({
+          id: `summary-income-${date}`,
+          title: `${incomeLabel}: $${totalIncome.toFixed(0)}`,
+          start: date,
+          backgroundColor: '#22c55e',
+          borderColor: '#22c55e',
+          extendedProps: {
+            transaction_type: 'income',
+            isSummary: true,
+            summaryDate: date,
+            count: income.length,
+            total: totalIncome,
+          },
+        });
+      }
+    }
+  }
+
+  return events;
+});
+
 const calendarOptions = ref({
   plugins: [dayGridPlugin, interactionPlugin, listPlugin],
   initialView: 'dayGridMonth',
@@ -28,11 +127,49 @@ const calendarOptions = ref({
   dateClick: handleDateClick,
   eventClick: handleEventClick,
   datesSet: handleDatesSet,
+  eventContent: renderEventContent,
   eventClassNames: (arg: any) => {
     const type = arg.event.extendedProps.transaction_type;
-    return type === 'income' ? ['event-income'] : ['event-expense'];
+    const isSummary = arg.event.extendedProps.isSummary;
+    const classes = [type === 'income' ? 'event-income' : 'event-expense'];
+    if (isSummary) classes.push('event-summary');
+    return classes;
   },
 });
+
+function renderEventContent(arg: any) {
+  const isSummary = arg.event.extendedProps.isSummary;
+  const date = arg.event.extendedProps.summaryDate || arg.event.startStr;
+  const isExpanded = expandedDates.value.has(date);
+
+  if (isSummary) {
+    // Render summary with expand triangle
+    return {
+      html: `
+        <div class="event-content-wrapper">
+          <span class="expand-triangle ${isExpanded ? 'expanded' : ''}">${isExpanded ? '▼' : '▶'}</span>
+          <span class="event-title">${arg.event.title}</span>
+        </div>
+      `
+    };
+  }
+
+  // Regular event (expanded view)
+  return {
+    html: `<span class="event-title">${arg.event.title}</span>`
+  };
+}
+
+function toggleDateExpansion(date: string) {
+  if (expandedDates.value.has(date)) {
+    expandedDates.value.delete(date);
+  } else {
+    expandedDates.value.add(date);
+  }
+  // Force reactivity update
+  expandedDates.value = new Set(expandedDates.value);
+  updateCalendarEvents();
+}
 
 function handleDateClick(info: any) {
   selectedDate.value = info.dateStr;
@@ -41,6 +178,16 @@ function handleDateClick(info: any) {
 }
 
 function handleEventClick(info: any) {
+  const isSummary = info.event.extendedProps.isSummary;
+  const summaryDate = info.event.extendedProps.summaryDate;
+
+  if (isSummary && summaryDate) {
+    // Toggle expansion for this date
+    toggleDateExpansion(summaryDate);
+    return;
+  }
+
+  // For individual events, show the modal
   selectedDate.value = info.event.startStr;
   selectedEvents.value = calendarStore.getEventsForDate(info.event.startStr);
   showEventModal.value = true;
@@ -54,20 +201,22 @@ async function handleDatesSet(info: any) {
 }
 
 function updateCalendarEvents() {
-  calendarOptions.value.events = calendarStore.events.map(event => ({
-    id: event.id,
-    title: `${event.transaction_type === 'income' ? '+' : '-'}$${parseFloat(event.amount).toFixed(0)} ${event.title}`,
-    start: event.date,
-    backgroundColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
-    borderColor: event.category_color || (event.transaction_type === 'income' ? '#22c55e' : '#ef4444'),
-    extendedProps: {
-      transaction_type: event.transaction_type,
-      amount: event.amount,
-      category_name: event.category_name,
-      is_recurring: event.is_recurring,
-      account_name: event.account_name,
-    },
-  }));
+  calendarOptions.value.events = summaryEvents.value;
+}
+
+function toggleViewMode() {
+  if (viewMode.value === 'collapsed') {
+    viewMode.value = 'expanded';
+  } else {
+    viewMode.value = 'collapsed';
+    expandedDates.value.clear();
+  }
+  updateCalendarEvents();
+}
+
+function collapseAll() {
+  expandedDates.value.clear();
+  updateCalendarEvents();
 }
 
 const formatCurrency = (value: string | number) => {
@@ -85,11 +234,46 @@ onMounted(async () => {
 });
 
 watch(() => calendarStore.events, updateCalendarEvents);
+watch([expandedDates, viewMode], updateCalendarEvents, { deep: true });
 </script>
 
 <template>
   <div class="p-6">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Calendar</h1>
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Calendar</h1>
+      <div class="flex items-center gap-3">
+        <button
+          v-if="expandedDates.size > 0"
+          @click="collapseAll"
+          class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        >
+          Collapse All
+        </button>
+        <button
+          @click="toggleViewMode"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg v-if="viewMode === 'collapsed'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+          </svg>
+          {{ viewMode === 'collapsed' ? 'Show All' : 'Show Summaries' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+      <div class="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>
+          <strong>Tip:</strong> Click the <span class="font-mono">▶</span> triangle on a summary to expand and see individual transactions. Click a date to see details.
+        </span>
+      </div>
+    </div>
 
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
       <FullCalendar ref="calendarRef" :options="calendarOptions" />
@@ -175,6 +359,38 @@ watch(() => calendarStore.events, updateCalendarEvents);
 .event-expense {
   background-color: #ef4444 !important;
   border-color: #ef4444 !important;
+}
+
+.event-summary {
+  cursor: pointer;
+}
+
+.event-summary:hover {
+  opacity: 0.9;
+}
+
+.event-content-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.expand-triangle {
+  font-size: 8px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.expand-triangle.expanded {
+  transform: rotate(0deg);
+}
+
+.event-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fc {
