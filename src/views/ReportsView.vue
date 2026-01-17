@@ -14,8 +14,9 @@ import {
   Filler,
 } from 'chart.js';
 import * as api from '../services/api';
+import { useAccountsStore } from '../stores';
 import type { SpendingByCategory, MonthlyTrend, CashFlowReport } from '../types';
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, subMonths, subYears, startOfMonth, endOfMonth } from 'date-fns';
 
 ChartJS.register(
   ArcElement,
@@ -29,10 +30,12 @@ ChartJS.register(
   Filler
 );
 
+const accountsStore = useAccountsStore();
 const loading = ref(false);
 const spendingByCategory = ref<SpendingByCategory[]>([]);
 const monthlyTrends = ref<MonthlyTrend[]>([]);
 const cashFlowReport = ref<CashFlowReport | null>(null);
+const lastYearCashFlow = ref<CashFlowReport | null>(null);
 
 const selectedPeriod = ref<'month' | 'quarter' | 'year'>('month');
 
@@ -57,10 +60,76 @@ const periodDates = computed(() => {
   }
 });
 
+// Last year same period for comparison
+const lastYearPeriodDates = computed(() => {
+  const now = new Date();
+  const lastYear = subYears(now, 1);
+  switch (selectedPeriod.value) {
+    case 'month':
+      return {
+        start: format(startOfMonth(lastYear), 'yyyy-MM-dd'),
+        end: format(endOfMonth(lastYear), 'yyyy-MM-dd'),
+      };
+    case 'quarter':
+      return {
+        start: format(subMonths(startOfMonth(lastYear), 2), 'yyyy-MM-dd'),
+        end: format(endOfMonth(lastYear), 'yyyy-MM-dd'),
+      };
+    case 'year':
+      return {
+        start: format(subMonths(startOfMonth(lastYear), 11), 'yyyy-MM-dd'),
+        end: format(endOfMonth(lastYear), 'yyyy-MM-dd'),
+      };
+  }
+});
+
 const formatCurrency = (value: string | number) => {
   const num = typeof value === 'string' ? parseFloat(value) : value;
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
 };
+
+// Net worth breakdown
+const netWorthBreakdown = computed(() => {
+  const assets = accountsStore.accounts
+    .filter(a => ['checking', 'savings', 'cash', 'investment'].includes(a.account_type))
+    .reduce((sum, a) => sum + parseFloat(a.balance || '0'), 0);
+
+  const liabilities = accountsStore.accounts
+    .filter(a => ['credit_card', 'loan'].includes(a.account_type))
+    .reduce((sum, a) => sum + parseFloat(a.balance || '0'), 0);
+
+  return {
+    assets,
+    liabilities,
+    netWorth: assets - liabilities,
+  };
+});
+
+// Year-over-year comparison
+const yoyComparison = computed(() => {
+  if (!cashFlowReport.value || !lastYearCashFlow.value) return null;
+
+  const currentExpenses = parseFloat(cashFlowReport.value.total_expenses) || 0;
+  const lastYearExpenses = parseFloat(lastYearCashFlow.value.total_expenses) || 0;
+  const currentIncome = parseFloat(cashFlowReport.value.total_income) || 0;
+  const lastYearIncome = parseFloat(lastYearCashFlow.value.total_income) || 0;
+
+  const expenseChange = lastYearExpenses > 0
+    ? ((currentExpenses - lastYearExpenses) / lastYearExpenses) * 100
+    : 0;
+  const incomeChange = lastYearIncome > 0
+    ? ((currentIncome - lastYearIncome) / lastYearIncome) * 100
+    : 0;
+
+  return {
+    currentExpenses,
+    lastYearExpenses,
+    expenseChange,
+    currentIncome,
+    lastYearIncome,
+    incomeChange,
+  };
+});
 
 const categoryChartData = computed(() => ({
   labels: spendingByCategory.value.map(s => s.category_name),
@@ -129,17 +198,19 @@ const barChartOptions = {
 
 async function fetchReports() {
   loading.value = true;
-  // Ensure loading overlay renders before heavy operations
   await nextTick();
   try {
-    const [spending, trends, cashFlow] = await Promise.all([
+    const [spending, trends, cashFlow, lastYearCf, _accounts] = await Promise.all([
       api.getSpendingByCategory(periodDates.value.start, periodDates.value.end),
       api.getMonthlyTrends(12),
       api.getCashFlowReport(periodDates.value.start, periodDates.value.end),
+      api.getCashFlowReport(lastYearPeriodDates.value.start, lastYearPeriodDates.value.end),
+      accountsStore.fetchAccounts(),
     ]);
     spendingByCategory.value = spending;
     monthlyTrends.value = trends;
     cashFlowReport.value = cashFlow;
+    lastYearCashFlow.value = lastYearCf;
   } catch (e) {
     console.error('Failed to fetch reports:', e);
   } finally {
@@ -172,19 +243,67 @@ onMounted(fetchReports);
       </div>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- Net Worth Card -->
+    <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 class="text-lg opacity-90 mb-1">Net Worth</h2>
+          <p class="text-4xl font-bold">{{ formatCurrency(netWorthBreakdown.netWorth) }}</p>
+        </div>
+        <div class="flex gap-8 mt-4 md:mt-0">
+          <div class="text-center">
+            <p class="text-sm opacity-75">Assets</p>
+            <p class="text-xl font-semibold">{{ formatCurrency(netWorthBreakdown.assets) }}</p>
+          </div>
+          <div class="text-center">
+            <p class="text-sm opacity-75">Liabilities</p>
+            <p class="text-xl font-semibold">{{ formatCurrency(netWorthBreakdown.liabilities) }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary Cards with YoY Comparison -->
     <div v-if="cashFlowReport" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Income</h3>
         <p class="text-2xl font-bold text-green-600 mt-2">
           {{ formatCurrency(cashFlowReport.total_income) }}
         </p>
+        <div v-if="yoyComparison && yoyComparison.lastYearIncome > 0" class="mt-2 flex items-center gap-1">
+          <svg
+            :class="['w-4 h-4', yoyComparison.incomeChange >= 0 ? 'text-green-500' : 'text-red-500']"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              :d="yoyComparison.incomeChange >= 0 ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'"
+            />
+          </svg>
+          <span :class="['text-sm', yoyComparison.incomeChange >= 0 ? 'text-green-600' : 'text-red-600']">
+            {{ Math.abs(yoyComparison.incomeChange).toFixed(1) }}% vs last year
+          </span>
+        </div>
       </div>
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Expenses</h3>
         <p class="text-2xl font-bold text-red-600 mt-2">
           {{ formatCurrency(cashFlowReport.total_expenses) }}
         </p>
+        <div v-if="yoyComparison && yoyComparison.lastYearExpenses > 0" class="mt-2 flex items-center gap-1">
+          <svg
+            :class="['w-4 h-4', yoyComparison.expenseChange <= 0 ? 'text-green-500' : 'text-red-500']"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              :d="yoyComparison.expenseChange >= 0 ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'"
+            />
+          </svg>
+          <span :class="['text-sm', yoyComparison.expenseChange <= 0 ? 'text-green-600' : 'text-red-600']">
+            {{ Math.abs(yoyComparison.expenseChange).toFixed(1) }}% vs last year
+          </span>
+        </div>
       </div>
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Net Cash Flow</h3>
@@ -195,6 +314,11 @@ onMounted(fetchReports);
           ]"
         >
           {{ formatCurrency(cashFlowReport.net_cash_flow) }}
+        </p>
+        <p class="text-sm text-gray-500 mt-2">
+          {{ parseFloat(cashFlowReport.total_income) > 0
+            ? ((parseFloat(cashFlowReport.net_cash_flow) / parseFloat(cashFlowReport.total_income)) * 100).toFixed(1)
+            : 0 }}% savings rate
         </p>
       </div>
     </div>
