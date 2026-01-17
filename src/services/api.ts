@@ -32,6 +32,7 @@ import type {
   AutoCategorizeResult,
   BatchCategorizeResult,
   UserCategoryRule,
+  SplitPart,
 } from '../types';
 
 // Initialization
@@ -199,3 +200,58 @@ export const getBackupInfo = (path: string) =>
 
 export const getDefaultBackupPath = () =>
   invoke<string>('get_default_backup_path');
+
+// Split Transactions
+export const createSplitTransaction = async (
+  parentTransactionId: string,
+  parts: SplitPart[]
+): Promise<Transaction[]> => {
+  // Get the parent transaction
+  const parent = await getTransaction(parentTransactionId);
+
+  // Mark parent as split
+  await updateTransaction({
+    id: parentTransactionId,
+    is_split: true,
+  });
+
+  // Create child transactions for each split part
+  const childTransactions: Transaction[] = [];
+  for (const part of parts) {
+    const child = await invoke<Transaction>('create_transaction', {
+      request: {
+        account_id: parent.account_id,
+        transaction_type: parent.transaction_type,
+        amount: part.amount,
+        date: parent.date,
+        description: part.description || parent.description,
+        category_id: part.category_id,
+        payee: parent.payee,
+        status: parent.status,
+        parent_transaction_id: parentTransactionId,
+      },
+    });
+    childTransactions.push(child);
+  }
+
+  return childTransactions;
+};
+
+export const getSplitParts = async (parentTransactionId: string): Promise<Transaction[]> => {
+  const allTransactions = await getTransactions({});
+  return allTransactions.filter(t => t.parent_transaction_id === parentTransactionId);
+};
+
+export const unsplitTransaction = async (parentTransactionId: string): Promise<void> => {
+  // Get and delete all child transactions
+  const children = await getSplitParts(parentTransactionId);
+  for (const child of children) {
+    await deleteTransaction(child.id);
+  }
+
+  // Mark parent as not split
+  await updateTransaction({
+    id: parentTransactionId,
+    is_split: false,
+  });
+};

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
-import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult, UserCategoryRule } from '../types';
+import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult, UserCategoryRule, Transaction, SplitPart } from '../types';
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import * as api from '../services/api';
+import SplitTransactionModal from '../components/SplitTransactionModal.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 
 const transactionsStore = useTransactionsStore();
 const accountsStore = useAccountsStore();
@@ -31,6 +33,15 @@ const showRulesModal = ref(false);
 const userRules = ref<UserCategoryRule[]>([]);
 const loadingRules = ref(false);
 const deletingRuleId = ref<string | null>(null);
+
+// Split transaction state
+const showSplitModal = ref(false);
+const selectedTransaction = ref<Transaction | null>(null);
+const splittingTransaction = ref(false);
+
+// Delete confirmation state
+const showDeleteConfirm = ref(false);
+const transactionToDelete = ref<Transaction | null>(null);
 
 // Pagination state
 const currentPage = ref(1);
@@ -211,9 +222,52 @@ function resetForm() {
   };
 }
 
-async function deleteTransaction(id: string) {
-  if (confirm('Are you sure you want to delete this transaction?')) {
-    await transactionsStore.deleteTransaction(id);
+function confirmDelete(tx: Transaction) {
+  transactionToDelete.value = tx;
+  showDeleteConfirm.value = true;
+}
+
+async function handleDeleteConfirm() {
+  if (transactionToDelete.value) {
+    await transactionsStore.deleteTransaction(transactionToDelete.value.id);
+    transactionToDelete.value = null;
+  }
+}
+
+function openSplitModal(tx: Transaction) {
+  // Don't allow splitting already-split transactions or child transactions
+  if (tx.is_split || tx.parent_transaction_id) return;
+  selectedTransaction.value = tx;
+  showSplitModal.value = true;
+}
+
+async function handleSplitSave(parts: SplitPart[]) {
+  if (!selectedTransaction.value) return;
+
+  splittingTransaction.value = true;
+  try {
+    await api.createSplitTransaction(selectedTransaction.value.id, parts);
+    await transactionsStore.fetchTransactions({});
+    showSplitModal.value = false;
+    selectedTransaction.value = null;
+  } catch (e) {
+    console.error('Failed to split transaction:', e);
+    alert('Failed to split transaction.');
+  } finally {
+    splittingTransaction.value = false;
+  }
+}
+
+async function unsplitTransaction(tx: Transaction) {
+  if (!tx.is_split) return;
+  if (!confirm('This will remove the split and delete all split parts. Continue?')) return;
+
+  try {
+    await api.unsplitTransaction(tx.id);
+    await transactionsStore.fetchTransactions({});
+  } catch (e) {
+    console.error('Failed to unsplit transaction:', e);
+    alert('Failed to unsplit transaction.');
   }
 }
 
@@ -509,7 +563,10 @@ onMounted(async () => {
         <div
           v-for="tx in paginatedTransactions"
           :key="tx.id"
-          class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          :class="[
+            'p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors',
+            tx.parent_transaction_id ? 'ml-8 border-l-2 border-blue-300 dark:border-blue-600' : ''
+          ]"
         >
           <div class="flex items-center justify-between">
             <div class="flex-1">
@@ -518,7 +575,10 @@ onMounted(async () => {
                   class="w-10 h-10 rounded-full flex items-center justify-center"
                   :class="tx.transaction_type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'"
                 >
-                  <svg v-if="tx.transaction_type === 'income'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg v-if="tx.is_split" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  <svg v-else-if="tx.transaction_type === 'income'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                   </svg>
                   <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -526,7 +586,15 @@ onMounted(async () => {
                   </svg>
                 </div>
                 <div>
-                  <p class="font-medium text-gray-900 dark:text-white">{{ tx.description }}</p>
+                  <div class="flex items-center gap-2">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ tx.description }}</p>
+                    <span v-if="tx.is_split" class="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">
+                      Split
+                    </span>
+                    <span v-if="tx.parent_transaction_id" class="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded">
+                      Split Part
+                    </span>
+                  </div>
                   <p class="text-sm text-gray-500 dark:text-gray-400">
                     {{ tx.date }} · {{ accountsStore.accountsById[tx.account_id]?.name || 'Unknown Account' }}
                     <span v-if="tx.category_id" class="ml-2">
@@ -536,18 +604,42 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
               <p
                 :class="[
-                  'text-lg font-semibold',
+                  'text-lg font-semibold mr-2',
                   tx.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
                 ]"
               >
                 {{ tx.transaction_type === 'income' ? '+' : '-' }}{{ formatCurrency(tx.amount) }}
               </p>
+              <!-- Split button -->
               <button
-                @click="deleteTransaction(tx.id)"
+                v-if="!tx.is_split && !tx.parent_transaction_id"
+                @click="openSplitModal(tx)"
+                class="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                title="Split transaction"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </button>
+              <!-- Unsplit button -->
+              <button
+                v-if="tx.is_split"
+                @click="unsplitTransaction(tx)"
+                class="p-2 text-blue-500 hover:text-blue-700 transition-colors"
+                title="Remove split"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <!-- Delete button -->
+              <button
+                @click="confirmDelete(tx)"
                 class="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                title="Delete transaction"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1020,5 +1112,25 @@ onMounted(async () => {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
       </svg>
     </button>
+
+    <!-- Split Transaction Modal -->
+    <SplitTransactionModal
+      :show="showSplitModal"
+      :transaction="selectedTransaction"
+      @close="showSplitModal = false; selectedTransaction = null"
+      @save="handleSplitSave"
+    />
+
+    <!-- Delete Confirmation Dialog -->
+    <ConfirmDialog
+      :show="showDeleteConfirm"
+      title="Delete Transaction"
+      :message="`Are you sure you want to delete '${transactionToDelete?.description}'? This action cannot be undone.`"
+      confirmText="Delete"
+      variant="danger"
+      @confirm="handleDeleteConfirm"
+      @cancel="showDeleteConfirm = false; transactionToDelete = null"
+      @update:show="showDeleteConfirm = $event"
+    />
   </div>
 </template>

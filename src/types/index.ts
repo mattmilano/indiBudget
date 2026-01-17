@@ -378,3 +378,14 @@ export interface UserCategoryRule {
   category_name: string;
   created_at: string;
 }
+
+export interface SplitPart {
+  amount: string;
+  category_id?: string;
+  description?: string;
+}
+
+export interface CreateSplitTransactionRequest {
+  parent_transaction_id: string;
+  parts: SplitPart[];
+}
