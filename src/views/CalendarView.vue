@@ -40,6 +40,29 @@ const summaryEvents = computed(() => {
     const isExpanded = expandedDates.value.has(date) || viewMode.value === 'expanded';
 
     if (isExpanded) {
+      // Add collapse header when manually expanded (not in "Show All" mode)
+      if (expandedDates.value.has(date)) {
+        const expenses = dayEvents.filter(e => e.transaction_type === 'expense');
+        const income = dayEvents.filter(e => e.transaction_type === 'income');
+        const totalExpense = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const totalIncome = income.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const summaryParts = [];
+        if (expenses.length > 0) summaryParts.push(`${expenses.length} bill${expenses.length > 1 ? 's' : ''}: $${totalExpense.toFixed(0)}`);
+        if (income.length > 0) summaryParts.push(`${income.length} deposit${income.length > 1 ? 's' : ''}: $${totalIncome.toFixed(0)}`);
+
+        events.push({
+          id: `collapse-header-${date}`,
+          title: `${summaryParts.join(' | ')}`,
+          start: date,
+          backgroundColor: '#6366f1',
+          borderColor: '#6366f1',
+          extendedProps: {
+            isCollapseHeader: true,
+            summaryDate: date,
+          },
+        });
+      }
+
       // Show individual events when expanded
       for (const event of dayEvents) {
         events.push({
@@ -131,23 +154,40 @@ const calendarOptions = ref({
   eventClassNames: (arg: any) => {
     const type = arg.event.extendedProps.transaction_type;
     const isSummary = arg.event.extendedProps.isSummary;
-    const classes = [type === 'income' ? 'event-income' : 'event-expense'];
-    if (isSummary) classes.push('event-summary');
+    const isCollapseHeader = arg.event.extendedProps.isCollapseHeader;
+    const classes: string[] = [];
+    if (isCollapseHeader) {
+      classes.push('event-collapse-header');
+    } else {
+      classes.push(type === 'income' ? 'event-income' : 'event-expense');
+    }
+    if (isSummary || isCollapseHeader) classes.push('event-summary');
     return classes;
   },
 });
 
 function renderEventContent(arg: any) {
   const isSummary = arg.event.extendedProps.isSummary;
-  const date = arg.event.extendedProps.summaryDate || arg.event.startStr;
-  const isExpanded = expandedDates.value.has(date);
+  const isCollapseHeader = arg.event.extendedProps.isCollapseHeader;
+
+  if (isCollapseHeader) {
+    // Render collapse header with down triangle
+    return {
+      html: `
+        <div class="event-content-wrapper collapse-header">
+          <span class="expand-triangle expanded">▼</span>
+          <span class="event-title">${arg.event.title}</span>
+        </div>
+      `
+    };
+  }
 
   if (isSummary) {
     // Render summary with expand triangle
     return {
       html: `
         <div class="event-content-wrapper">
-          <span class="expand-triangle ${isExpanded ? 'expanded' : ''}">${isExpanded ? '▼' : '▶'}</span>
+          <span class="expand-triangle">▶</span>
           <span class="event-title">${arg.event.title}</span>
         </div>
       `
@@ -179,9 +219,10 @@ function handleDateClick(info: any) {
 
 function handleEventClick(info: any) {
   const isSummary = info.event.extendedProps.isSummary;
+  const isCollapseHeader = info.event.extendedProps.isCollapseHeader;
   const summaryDate = info.event.extendedProps.summaryDate;
 
-  if (isSummary && summaryDate) {
+  if ((isSummary || isCollapseHeader) && summaryDate) {
     // Toggle expansion for this date
     toggleDateExpansion(summaryDate);
     return;
@@ -270,7 +311,7 @@ watch([expandedDates, viewMode], updateCalendarEvents, { deep: true });
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>
-          <strong>Tip:</strong> Click the <span class="font-mono">▶</span> triangle on a summary to expand and see individual transactions. Click a date to see details.
+          <strong>Tip:</strong> Click <span class="font-mono">▶</span> to expand and see individual transactions, or <span class="font-mono">▼</span> to collapse back. Click a date to see details.
         </span>
       </div>
     </div>
@@ -359,6 +400,11 @@ watch([expandedDates, viewMode], updateCalendarEvents, { deep: true });
 .event-expense {
   background-color: #ef4444 !important;
   border-color: #ef4444 !important;
+}
+
+.event-collapse-header {
+  background-color: #6366f1 !important;
+  border-color: #6366f1 !important;
 }
 
 .event-summary {
