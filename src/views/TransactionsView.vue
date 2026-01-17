@@ -148,12 +148,6 @@ const paginatedTransactions = computed(() => {
   return filteredTransactions.value.slice(start, end);
 });
 
-// Reset to page 1 when filters change
-function resetPagination() {
-  currentPage.value = 1;
-}
-
-// Watch for filter changes to reset pagination
 const goToPage = (page: number) => {
   if (page >= 1 && page <= totalPages.value) {
     currentPage.value = page;

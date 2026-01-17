@@ -13,6 +13,8 @@ import {
   LineElement,
   Filler,
 } from 'chart.js';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import * as api from '../services/api';
 import { useAccountsStore } from '../stores';
 import type { SpendingByCategory, MonthlyTrend, CashFlowReport } from '../types';
@@ -196,6 +198,200 @@ const barChartOptions = {
   },
 };
 
+// Export functions
+function exportToCSV() {
+  const lines: string[] = [];
+  const periodLabel = selectedPeriod.value.charAt(0).toUpperCase() + selectedPeriod.value.slice(1);
+
+  // Header
+  lines.push(`indiBudget Financial Report - ${periodLabel}`);
+  lines.push(`Period: ${periodDates.value.start} to ${periodDates.value.end}`);
+  lines.push(`Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`);
+  lines.push('');
+
+  // Net Worth Summary
+  lines.push('NET WORTH SUMMARY');
+  lines.push('Type,Amount');
+  lines.push(`Assets,${netWorthBreakdown.value.assets.toFixed(2)}`);
+  lines.push(`Liabilities,${netWorthBreakdown.value.liabilities.toFixed(2)}`);
+  lines.push(`Net Worth,${netWorthBreakdown.value.netWorth.toFixed(2)}`);
+  lines.push('');
+
+  // Cash Flow Summary
+  if (cashFlowReport.value) {
+    lines.push('CASH FLOW SUMMARY');
+    lines.push('Metric,Amount');
+    lines.push(`Total Income,${parseFloat(cashFlowReport.value.total_income).toFixed(2)}`);
+    lines.push(`Total Expenses,${parseFloat(cashFlowReport.value.total_expenses).toFixed(2)}`);
+    lines.push(`Net Cash Flow,${parseFloat(cashFlowReport.value.net_cash_flow).toFixed(2)}`);
+    lines.push('');
+  }
+
+  // Spending by Category
+  if (spendingByCategory.value.length > 0) {
+    lines.push('SPENDING BY CATEGORY');
+    lines.push('Category,Amount,Percentage');
+    spendingByCategory.value.forEach(cat => {
+      lines.push(`"${cat.category_name}",${parseFloat(cat.total).toFixed(2)},${cat.percentage.toFixed(1)}%`);
+    });
+    lines.push('');
+  }
+
+  // Monthly Trends
+  if (monthlyTrends.value.length > 0) {
+    lines.push('MONTHLY TRENDS');
+    lines.push('Month,Year,Income,Expenses,Net');
+    monthlyTrends.value.forEach(trend => {
+      lines.push(`${trend.month},${trend.year},${parseFloat(trend.income).toFixed(2)},${parseFloat(trend.expenses).toFixed(2)},${parseFloat(trend.net).toFixed(2)}`);
+    });
+  }
+
+  // Create and download file
+  const csvContent = lines.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `indibudget-report-${periodDates.value.start}-to-${periodDates.value.end}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function exportToPDF() {
+  const doc = new jsPDF();
+  const periodLabel = selectedPeriod.value.charAt(0).toUpperCase() + selectedPeriod.value.slice(1);
+  let yPos = 20;
+
+  // Title
+  doc.setFontSize(20);
+  doc.setTextColor(30, 64, 175); // Blue color
+  doc.text('indiBudget Financial Report', 105, yPos, { align: 'center' });
+  yPos += 10;
+
+  // Subtitle
+  doc.setFontSize(12);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`${periodLabel}ly Report: ${periodDates.value.start} to ${periodDates.value.end}`, 105, yPos, { align: 'center' });
+  yPos += 8;
+  doc.text(`Generated: ${format(new Date(), 'MMMM d, yyyy')}`, 105, yPos, { align: 'center' });
+  yPos += 15;
+
+  // Net Worth Section
+  doc.setFontSize(14);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Net Worth Summary', 14, yPos);
+  yPos += 5;
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Description', 'Amount']],
+    body: [
+      ['Total Assets', formatCurrency(netWorthBreakdown.value.assets)],
+      ['Total Liabilities', formatCurrency(netWorthBreakdown.value.liabilities)],
+      ['Net Worth', formatCurrency(netWorthBreakdown.value.netWorth)],
+    ],
+    theme: 'striped',
+    headStyles: { fillColor: [30, 64, 175] },
+    margin: { left: 14 },
+  });
+
+  yPos = (doc as any).lastAutoTable.finalY + 15;
+
+  // Cash Flow Summary
+  if (cashFlowReport.value) {
+    doc.setFontSize(14);
+    doc.text('Cash Flow Summary', 14, yPos);
+    yPos += 5;
+
+    const savingsRate = parseFloat(cashFlowReport.value.total_income) > 0
+      ? ((parseFloat(cashFlowReport.value.net_cash_flow) / parseFloat(cashFlowReport.value.total_income)) * 100).toFixed(1)
+      : '0';
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Metric', 'Amount']],
+      body: [
+        ['Total Income', formatCurrency(cashFlowReport.value.total_income)],
+        ['Total Expenses', formatCurrency(cashFlowReport.value.total_expenses)],
+        ['Net Cash Flow', formatCurrency(cashFlowReport.value.net_cash_flow)],
+        ['Savings Rate', `${savingsRate}%`],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [30, 64, 175] },
+      margin: { left: 14 },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+  }
+
+  // Spending by Category
+  if (spendingByCategory.value.length > 0) {
+    // Check if we need a new page
+    if (yPos > 230) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.text('Spending by Category', 14, yPos);
+    yPos += 5;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Category', 'Amount', 'Percentage']],
+      body: spendingByCategory.value.map(cat => [
+        cat.category_name,
+        formatCurrency(cat.total),
+        `${cat.percentage.toFixed(1)}%`,
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [30, 64, 175] },
+      margin: { left: 14 },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+  }
+
+  // Monthly Trends
+  if (monthlyTrends.value.length > 0) {
+    // Check if we need a new page
+    if (yPos > 180) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.text('Monthly Trends (Last 12 Months)', 14, yPos);
+    yPos += 5;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Month', 'Income', 'Expenses', 'Net']],
+      body: monthlyTrends.value.map(trend => [
+        `${trend.month} ${trend.year}`,
+        formatCurrency(trend.income),
+        formatCurrency(trend.expenses),
+        formatCurrency(trend.net),
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [30, 64, 175] },
+      margin: { left: 14 },
+    });
+  }
+
+  // Footer
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+    doc.text('Generated by indiBudget', 14, 290);
+  }
+
+  // Save the PDF
+  doc.save(`indibudget-report-${periodDates.value.start}-to-${periodDates.value.end}.pdf`);
+}
+
 async function fetchReports() {
   loading.value = true;
   await nextTick();
@@ -226,20 +422,47 @@ onMounted(fetchReports);
   <div class="p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Reports</h1>
-      <div class="flex gap-2">
-        <button
-          v-for="period in ['month', 'quarter', 'year']"
-          :key="period"
-          @click="selectedPeriod = period as 'month' | 'quarter' | 'year'"
-          :class="[
-            'px-4 py-2 rounded-lg transition-colors capitalize',
-            selectedPeriod === period
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-          ]"
-        >
-          {{ period }}
-        </button>
+      <div class="flex items-center gap-4">
+        <!-- Period selector -->
+        <div class="flex gap-2">
+          <button
+            v-for="period in ['month', 'quarter', 'year']"
+            :key="period"
+            @click="selectedPeriod = period as 'month' | 'quarter' | 'year'"
+            :class="[
+              'px-4 py-2 rounded-lg transition-colors capitalize',
+              selectedPeriod === period
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+            ]"
+          >
+            {{ period }}
+          </button>
+        </div>
+
+        <!-- Export buttons -->
+        <div class="flex gap-2 border-l border-gray-300 dark:border-gray-600 pl-4">
+          <button
+            @click="exportToCSV"
+            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            title="Export to CSV"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            CSV
+          </button>
+          <button
+            @click="exportToPDF"
+            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            title="Export to PDF"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            PDF
+          </button>
+        </div>
       </div>
     </div>
 

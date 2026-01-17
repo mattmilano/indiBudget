@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, computed, ref } from 'vue';
 import { useAccountsStore, useTransactionsStore, useBudgetsStore, useCalendarStore, useCategoriesStore } from '../stores';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
@@ -16,10 +16,6 @@ const loading = ref(true);
 const today = new Date();
 const monthStart = format(startOfMonth(today), 'yyyy-MM-dd');
 const monthEnd = format(endOfMonth(today), 'yyyy-MM-dd');
-
-// Previous month for comparison
-const lastMonthStart = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
-const lastMonthEnd = format(endOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
 
 onMounted(async () => {
   loading.value = true;
