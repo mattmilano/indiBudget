@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useTransactionsStore, useAccountsStore, useCategoriesStore } from '../stores';
 import type { CreateTransactionRequest, TransactionType, AutoCategorizeResult, BatchCategorizeResult, UserCategoryRule, Transaction, SplitPart } from '../types';
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import * as api from '../services/api';
 import SplitTransactionModal from '../components/SplitTransactionModal.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+
+// Helper to ensure UI updates before heavy operations
+function waitForPaint(): Promise<void> {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resolve();
+      });
+    });
+  });
+}
 
 const transactionsStore = useTransactionsStore();
 const accountsStore = useAccountsStore();
@@ -336,6 +347,8 @@ async function unsplitTransaction(tx: Transaction) {
 
 async function autoCategorize() {
   categorizing.value = true;
+  await nextTick();
+  await waitForPaint(); // Ensure loading overlay is actually painted
   try {
     const result = await api.autoCategorizeTransactions();
     categorizeResult.value = result;
@@ -379,6 +392,8 @@ async function executeBatchCategorize() {
   }
 
   batchProcessing.value = true;
+  await nextTick();
+  await waitForPaint(); // Ensure loading state is actually painted
   try {
     const result = await api.batchCategorizeTransactions(
       batchKeyword.value,

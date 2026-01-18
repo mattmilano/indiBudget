@@ -104,6 +104,17 @@ const useSeparateColumns = ref(false);
 
 const isAutoFormat = ref(false);
 
+// Helper to ensure UI updates before heavy operations
+function waitForPaint(): Promise<void> {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resolve();
+      });
+    });
+  });
+}
+
 async function selectFile() {
   const selected = await open({
     multiple: false,
@@ -120,7 +131,8 @@ async function selectFile() {
     selectedFile.value = selected;
     try {
       loading.value = true;
-      await nextTick(); // Ensure loading overlay renders
+      await nextTick();
+      await waitForPaint(); // Ensure loading overlay is actually painted
       columns.value = await api.detectImportColumns(selected);
 
       // Check if this is an auto-format (OFX/QFX/QIF) that doesn't need column mapping
@@ -180,7 +192,8 @@ async function previewImport() {
 
   try {
     loading.value = true;
-    await nextTick(); // Ensure loading overlay renders
+    await nextTick();
+    await waitForPaint(); // Ensure loading overlay is actually painted
     const mappingToSend = { ...mapping.value };
     if (!useSeparateColumns.value) {
       mappingToSend.debit_column = undefined;
@@ -205,8 +218,8 @@ async function performImport() {
   try {
     loading.value = true;
     errorMessage.value = '';
-    // Wait for DOM to update and show loading overlay before starting heavy operation
     await nextTick();
+    await waitForPaint(); // Ensure loading overlay is actually painted
     const mappingToSend = { ...mapping.value };
     if (!useSeparateColumns.value) {
       mappingToSend.debit_column = undefined;

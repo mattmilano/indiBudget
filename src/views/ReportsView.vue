@@ -49,7 +49,7 @@ interface NetWorthSnapshot {
 const netWorthHistory = ref<NetWorthSnapshot[]>([]);
 const NET_WORTH_STORAGE_KEY = 'indibudget_networth_history';
 
-const selectedPeriod = ref<'month' | 'quarter' | 'year'>('month');
+const selectedPeriod = ref<'month' | 'quarter' | 'year' | 'all'>('month');
 
 const periodDates = computed(() => {
   const now = new Date();
@@ -67,6 +67,12 @@ const periodDates = computed(() => {
     case 'year':
       return {
         start: format(subMonths(startOfMonth(now), 11), 'yyyy-MM-dd'),
+        end: format(endOfMonth(now), 'yyyy-MM-dd'),
+      };
+    case 'all':
+      // Return empty dates to get all transactions
+      return {
+        start: '1900-01-01',
         end: format(endOfMonth(now), 'yyyy-MM-dd'),
       };
   }
@@ -90,6 +96,12 @@ const lastYearPeriodDates = computed(() => {
     case 'year':
       return {
         start: format(subMonths(startOfMonth(lastYear), 11), 'yyyy-MM-dd'),
+        end: format(endOfMonth(lastYear), 'yyyy-MM-dd'),
+      };
+    case 'all':
+      // For "all time", compare to all historical data as well (no real comparison)
+      return {
+        start: '1900-01-01',
         end: format(endOfMonth(lastYear), 'yyyy-MM-dd'),
       };
   }
@@ -641,9 +653,9 @@ onMounted(async () => {
         <!-- Period selector -->
         <div class="flex gap-2">
           <button
-            v-for="period in ['month', 'quarter', 'year']"
+            v-for="period in ['month', 'quarter', 'year', 'all']"
             :key="period"
-            @click="selectedPeriod = period as 'month' | 'quarter' | 'year'"
+            @click="selectedPeriod = period as 'month' | 'quarter' | 'year' | 'all'"
             :class="[
               'px-4 py-2 rounded-lg transition-colors capitalize',
               selectedPeriod === period
@@ -651,7 +663,7 @@ onMounted(async () => {
                 : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
             ]"
           >
-            {{ period }}
+            {{ period === 'all' ? 'All Time' : period }}
           </button>
         </div>
 

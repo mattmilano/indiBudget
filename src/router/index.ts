@@ -11,7 +11,7 @@ const router = createRouter({
     {
       path: '/calendar',
       name: 'calendar',
-      component: () => import('../views/CalendarView.vue'),
+      component: () => import('../views/BillCalendarView.vue'),
     },
     {
       path: '/transactions',
@@ -47,11 +47,6 @@ const router = createRouter({
       path: '/recurring',
       name: 'recurring',
       component: () => import('../views/RecurringView.vue'),
-    },
-    {
-      path: '/bill-calendar',
-      name: 'bill-calendar',
-      component: () => import('../views/BillCalendarView.vue'),
     },
     {
       path: '/reports',

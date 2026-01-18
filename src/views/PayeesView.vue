@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useTransactionsStore, useCategoriesStore } from '../stores';
 
 const transactionsStore = useTransactionsStore();
 const categoriesStore = useCategoriesStore();
 
 const searchQuery = ref('');
+const debouncedSearchQuery = ref('');
 const sortBy = ref<'name' | 'count' | 'total'>('total');
 const sortOrder = ref<'asc' | 'desc'>('desc');
+
+// Debounce search to avoid recalculating on every keystroke
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+watch(searchQuery, (newVal) => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    debouncedSearchQuery.value = newVal;
+  }, 200);
+}, { immediate: true });
 
 // Aggregate payee data from transactions
 const payeesData = computed(() => {
@@ -55,9 +65,9 @@ const payeesData = computed(() => {
 const filteredPayees = computed(() => {
   let result = payeesData.value;
 
-  // Apply search filter
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase();
+  // Apply search filter (using debounced value for performance)
+  if (debouncedSearchQuery.value) {
+    const query = debouncedSearchQuery.value.toLowerCase();
     result = result.filter(p => p.name.toLowerCase().includes(query));
   }
 
@@ -262,10 +272,10 @@ onMounted(async () => {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
       <h3 class="text-lg font-medium text-gray-900 dark:text-white mt-4">
-        {{ searchQuery ? 'No matching payees found' : 'No payees yet' }}
+        {{ debouncedSearchQuery ? 'No matching payees found' : 'No payees yet' }}
       </h3>
       <p class="text-gray-500 dark:text-gray-400 mt-2">
-        {{ searchQuery ? 'Try adjusting your search.' : 'Import transactions or add payee information to see them here.' }}
+        {{ debouncedSearchQuery ? 'Try adjusting your search.' : 'Import transactions or add payee information to see them here.' }}
       </p>
     </div>
   </div>
