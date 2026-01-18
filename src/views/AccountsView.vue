@@ -30,6 +30,7 @@ const editForm = ref({
   name: '',
   account_type: 'checking' as AccountType,
   balance: '',
+  currency: 'USD',
   institution: '',
   account_number_last4: '',
 });
@@ -44,9 +45,29 @@ const accountTypes: { value: AccountType; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-const formatCurrency = (value: string | number) => {
+const currencies = [
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'CHF', symbol: 'Fr', name: 'Swiss Franc' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'MXN', symbol: '$', name: 'Mexican Peso' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+];
+
+const formatCurrency = (value: string | number, currencyCode: string = 'USD') => {
   const num = typeof value === 'string' ? parseFloat(value) : value;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(num || 0);
+  } catch {
+    // Fallback for unsupported currencies
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
+  }
 };
 
 const getAccountTypeIcon = (type: AccountType) => {
@@ -98,6 +119,7 @@ function openEditModal(account: Account) {
     name: account.name,
     account_type: account.account_type,
     balance: account.balance,
+    currency: account.currency || 'USD',
     institution: account.institution || '',
     account_number_last4: account.account_number_last4 || '',
   };
@@ -238,12 +260,17 @@ onMounted(() => {
                 : 'text-gray-900 dark:text-white'
             ]"
           >
-            {{ formatCurrency(account.balance) }}
+            {{ formatCurrency(account.balance, account.currency || 'USD') }}
           </p>
-          <p v-if="account.institution" class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {{ account.institution }}
-            <span v-if="account.account_number_last4"> &middot; ****{{ account.account_number_last4 }}</span>
-          </p>
+          <div class="flex items-center gap-2 mt-1">
+            <span v-if="account.currency && account.currency !== 'USD'" class="px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+              {{ account.currency }}
+            </span>
+            <p v-if="account.institution" class="text-sm text-gray-500 dark:text-gray-400">
+              {{ account.institution }}
+              <span v-if="account.account_number_last4"> &middot; ****{{ account.account_number_last4 }}</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -303,17 +330,27 @@ onMounted(() => {
               </option>
             </select>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Current Balance</label>
-            <div class="relative">
-              <span class="absolute left-3 top-2 text-gray-500">$</span>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Current Balance</label>
               <input
                 v-model="newAccount.balance"
                 type="number"
                 step="0.01"
                 required
-                class="w-full pl-7 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Currency</label>
+              <select
+                v-model="newAccount.currency"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="curr in currencies" :key="curr.code" :value="curr.code">
+                  {{ curr.code }}
+                </option>
+              </select>
             </div>
           </div>
           <div>
@@ -393,25 +430,35 @@ onMounted(() => {
               </option>
             </select>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Current Balance
-              <span class="text-xs text-gray-500 ml-1">(adjust if needed)</span>
-            </label>
-            <div class="relative">
-              <span class="absolute left-3 top-2 text-gray-500">$</span>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Current Balance
+                <span class="text-xs text-gray-500 ml-1">(adjust if needed)</span>
+              </label>
               <input
                 v-model="editForm.balance"
                 type="number"
                 step="0.01"
                 required
-                class="w-full pl-7 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <p class="text-xs text-gray-500 mt-1">
-              Use this to correct the balance or make manual adjustments
-            </p>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Currency</label>
+              <select
+                v-model="editForm.currency"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="curr in currencies" :key="curr.code" :value="curr.code">
+                  {{ curr.code }}
+                </option>
+              </select>
+            </div>
           </div>
+          <p class="text-xs text-gray-500 -mt-2">
+            Use balance to correct or make manual adjustments
+          </p>
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Institution</label>
             <input

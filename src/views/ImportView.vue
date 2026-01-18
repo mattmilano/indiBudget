@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAccountsStore, useTransactionsStore } from '../stores';
 import * as api from '../services/api';
 import type { ImportMapping, RawTransaction, ImportResult } from '../types';
+import { format } from 'date-fns';
+
+interface ImportHistoryEntry {
+  id: string;
+  filename: string;
+  accountId: string;
+  accountName: string;
+  importedCount: number;
+  duplicateCount: number;
+  errorCount: number;
+  importDate: string;
+}
 
 const router = useRouter();
 const accountsStore = useAccountsStore();
@@ -18,6 +30,55 @@ const importResult = ref<ImportResult | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
 const step = ref<'select' | 'map' | 'preview' | 'result'>('select');
+const showHistory = ref(false);
+
+// Import history from localStorage
+const importHistory = ref<ImportHistoryEntry[]>([]);
+
+function loadImportHistory() {
+  try {
+    const stored = localStorage.getItem('importHistory');
+    if (stored) {
+      importHistory.value = JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load import history:', e);
+    importHistory.value = [];
+  }
+}
+
+function saveImportHistory() {
+  try {
+    // Keep only last 50 entries
+    const trimmed = importHistory.value.slice(0, 50);
+    localStorage.setItem('importHistory', JSON.stringify(trimmed));
+  } catch (e) {
+    console.error('Failed to save import history:', e);
+  }
+}
+
+function addToHistory(result: ImportResult, filename: string, accountId: string) {
+  const account = accountsStore.accounts.find(a => a.id === accountId);
+  const entry: ImportHistoryEntry = {
+    id: crypto.randomUUID(),
+    filename: filename.split('/').pop() || filename,
+    accountId,
+    accountName: account?.name || 'Unknown',
+    importedCount: result.imported.length,
+    duplicateCount: result.skipped_duplicates,
+    errorCount: result.errors.length,
+    importDate: new Date().toISOString(),
+  };
+  importHistory.value.unshift(entry);
+  saveImportHistory();
+}
+
+function clearHistory() {
+  importHistory.value = [];
+  localStorage.removeItem('importHistory');
+}
+
+const recentImports = computed(() => importHistory.value.slice(0, 5));
 
 const mapping = ref<ImportMapping>({
   date_column: 'Date',
@@ -156,6 +217,8 @@ async function performImport() {
       selectedAccountId.value,
       mappingToSend
     );
+    // Add to import history
+    addToHistory(importResult.value, selectedFile.value, selectedAccountId.value);
     step.value = 'result';
     // Refresh the transactions store with no filter so all views see the imported data
     await transactionsStore.fetchTransactions({});
@@ -194,17 +257,110 @@ function resetImport() {
 
 onMounted(() => {
   accountsStore.fetchAccounts();
+  loadImportHistory();
 });
 </script>
 
 <template>
   <div class="p-6">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Import Transactions</h1>
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Import Transactions</h1>
+      <button
+        v-if="importHistory.length > 0"
+        @click="showHistory = !showHistory"
+        class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-2"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        {{ showHistory ? 'Hide History' : 'Import History' }}
+      </button>
+    </div>
 
     <!-- Error Message -->
     <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
       <p class="text-red-700 dark:text-red-400">{{ errorMessage }}</p>
       <button @click="errorMessage = ''" class="mt-2 text-sm text-red-600 dark:text-red-500 underline">Dismiss</button>
+    </div>
+
+    <!-- Import History Panel -->
+    <div v-if="showHistory" class="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Import History</h2>
+        <button
+          @click="clearHistory"
+          class="text-sm text-red-600 hover:text-red-700 transition-colors"
+        >
+          Clear History
+        </button>
+      </div>
+
+      <div v-if="importHistory.length === 0" class="text-center py-8 text-gray-500">
+        No import history yet
+      </div>
+
+      <div v-else class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-700">
+              <th class="text-left py-2 px-4">Date</th>
+              <th class="text-left py-2 px-4">File</th>
+              <th class="text-left py-2 px-4">Account</th>
+              <th class="text-right py-2 px-4">Imported</th>
+              <th class="text-right py-2 px-4">Duplicates</th>
+              <th class="text-right py-2 px-4">Errors</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="entry in importHistory"
+              :key="entry.id"
+              class="border-b border-gray-100 dark:border-gray-700"
+            >
+              <td class="py-2 px-4 text-gray-600 dark:text-gray-400">
+                {{ format(new Date(entry.importDate), 'MMM d, yyyy h:mm a') }}
+              </td>
+              <td class="py-2 px-4 font-medium text-gray-900 dark:text-white">
+                {{ entry.filename }}
+              </td>
+              <td class="py-2 px-4 text-gray-600 dark:text-gray-400">
+                {{ entry.accountName }}
+              </td>
+              <td class="py-2 px-4 text-right text-green-600">
+                {{ entry.importedCount }}
+              </td>
+              <td class="py-2 px-4 text-right text-yellow-600">
+                {{ entry.duplicateCount }}
+              </td>
+              <td class="py-2 px-4 text-right text-red-600">
+                {{ entry.errorCount }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recent Imports Summary (shown on select step) -->
+    <div v-if="step === 'select' && recentImports.length > 0 && !showHistory" class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+      <div class="flex items-center gap-2 mb-2">
+        <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h3 class="font-medium text-blue-800 dark:text-blue-200">Recent Imports</h3>
+      </div>
+      <div class="space-y-1">
+        <div v-for="entry in recentImports" :key="entry.id" class="text-sm text-blue-700 dark:text-blue-300 flex justify-between">
+          <span>{{ entry.filename }} - {{ entry.accountName }}</span>
+          <span class="text-blue-600 dark:text-blue-400">{{ entry.importedCount }} imported</span>
+        </div>
+      </div>
+      <button
+        @click="showHistory = true"
+        class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        View full history
+      </button>
     </div>
 
     <!-- Step 1: Select File -->
