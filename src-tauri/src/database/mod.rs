@@ -113,12 +113,49 @@ impl Database {
 }
 
 pub fn get_database_path() -> PathBuf {
+    // Use simple "indibudget" naming scheme across all platforms
     // On Linux: ~/.local/share/indibudget/
-    // On macOS: ~/Library/Application Support/com.indomitusgroup.indibudget/
-    // On Windows: C:\Users\<User>\AppData\Roaming\indomitusgroup\indibudget\
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "indomitusgroup", "indibudget") {
-        proj_dirs.data_dir().join("indibudget.db")
-    } else {
-        PathBuf::from("indibudget.db")
+    // On macOS: ~/Library/Application Support/indibudget/
+    // On Windows: C:\Users\<User>\AppData\Roaming\indibudget\
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
+            PathBuf::from(data_home).join("indibudget").join("indibudget.db")
+        } else if let Some(home) = std::env::var_os("HOME") {
+            PathBuf::from(home).join(".local/share/indibudget").join("indibudget.db")
+        } else {
+            PathBuf::from("indibudget.db")
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            PathBuf::from(home)
+                .join("Library/Application Support/indibudget")
+                .join("indibudget.db")
+        } else {
+            PathBuf::from("indibudget.db")
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            PathBuf::from(appdata).join("indibudget").join("indibudget.db")
+        } else {
+            PathBuf::from("indibudget.db")
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        // Fallback for other platforms
+        if let Some(proj_dirs) = directories::ProjectDirs::from("", "", "indibudget") {
+            proj_dirs.data_dir().join("indibudget.db")
+        } else {
+            PathBuf::from("indibudget.db")
+        }
     }
 }
