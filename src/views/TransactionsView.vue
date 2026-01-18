@@ -1135,7 +1135,7 @@ onMounted(async () => {
     <!-- Floating Action Button for Batch Categorize (visible when scrolling) -->
     <button
       @click="showBatchModal = true"
-      class="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center z-40"
+      class="fixed bottom-20 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center z-40"
       title="Batch Categorize"
     >
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
