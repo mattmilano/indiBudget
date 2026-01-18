@@ -39,6 +39,16 @@ const monthlyTrends = ref<MonthlyTrend[]>([]);
 const cashFlowReport = ref<CashFlowReport | null>(null);
 const lastYearCashFlow = ref<CashFlowReport | null>(null);
 
+// Net worth history tracking
+interface NetWorthSnapshot {
+  date: string;
+  assets: number;
+  liabilities: number;
+  netWorth: number;
+}
+const netWorthHistory = ref<NetWorthSnapshot[]>([]);
+const NET_WORTH_STORAGE_KEY = 'indibudget_networth_history';
+
 const selectedPeriod = ref<'month' | 'quarter' | 'year'>('month');
 
 const periodDates = computed(() => {
@@ -173,6 +183,206 @@ const netChartData = computed(() => ({
     },
   ],
 }));
+
+// Net worth history chart data
+const netWorthChartData = computed(() => ({
+  labels: netWorthHistory.value.map(h => format(new Date(h.date), 'MMM d')),
+  datasets: [
+    {
+      label: 'Net Worth',
+      data: netWorthHistory.value.map(h => h.netWorth),
+      borderColor: '#8b5cf6',
+      backgroundColor: 'rgba(139, 92, 246, 0.1)',
+      fill: true,
+      tension: 0.4,
+    },
+    {
+      label: 'Assets',
+      data: netWorthHistory.value.map(h => h.assets),
+      borderColor: '#22c55e',
+      backgroundColor: 'transparent',
+      borderDash: [5, 5],
+      tension: 0.4,
+    },
+    {
+      label: 'Liabilities',
+      data: netWorthHistory.value.map(h => h.liabilities),
+      borderColor: '#ef4444',
+      backgroundColor: 'transparent',
+      borderDash: [5, 5],
+      tension: 0.4,
+    },
+  ],
+}));
+
+// Net worth history functions
+function loadNetWorthHistory() {
+  try {
+    const stored = localStorage.getItem(NET_WORTH_STORAGE_KEY);
+    if (stored) {
+      netWorthHistory.value = JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load net worth history:', e);
+    netWorthHistory.value = [];
+  }
+}
+
+function saveNetWorthHistory() {
+  try {
+    localStorage.setItem(NET_WORTH_STORAGE_KEY, JSON.stringify(netWorthHistory.value));
+  } catch (e) {
+    console.error('Failed to save net worth history:', e);
+  }
+}
+
+function recordNetWorthSnapshot() {
+  const today = format(new Date(), 'yyyy-MM-dd');
+
+  // Check if we already have a snapshot for today
+  const existingIndex = netWorthHistory.value.findIndex(h => h.date === today);
+
+  const snapshot: NetWorthSnapshot = {
+    date: today,
+    assets: netWorthBreakdown.value.assets,
+    liabilities: netWorthBreakdown.value.liabilities,
+    netWorth: netWorthBreakdown.value.netWorth,
+  };
+
+  if (existingIndex >= 0) {
+    // Update existing snapshot for today
+    netWorthHistory.value[existingIndex] = snapshot;
+  } else {
+    // Add new snapshot
+    netWorthHistory.value.push(snapshot);
+  }
+
+  // Sort by date and keep last 365 days
+  netWorthHistory.value.sort((a, b) => a.date.localeCompare(b.date));
+  if (netWorthHistory.value.length > 365) {
+    netWorthHistory.value = netWorthHistory.value.slice(-365);
+  }
+
+  saveNetWorthHistory();
+}
+
+// Net worth change calculations
+const netWorthChange = computed(() => {
+  if (netWorthHistory.value.length < 2) return null;
+
+  const latest = netWorthHistory.value[netWorthHistory.value.length - 1];
+  const weekAgo = netWorthHistory.value.find(h => {
+    const diff = (new Date(latest.date).getTime() - new Date(h.date).getTime()) / (1000 * 60 * 60 * 24);
+    return diff >= 7;
+  });
+  const monthAgo = netWorthHistory.value.find(h => {
+    const diff = (new Date(latest.date).getTime() - new Date(h.date).getTime()) / (1000 * 60 * 60 * 24);
+    return diff >= 30;
+  });
+
+  return {
+    weekChange: weekAgo ? latest.netWorth - weekAgo.netWorth : null,
+    weekPercent: weekAgo && weekAgo.netWorth !== 0
+      ? ((latest.netWorth - weekAgo.netWorth) / Math.abs(weekAgo.netWorth)) * 100
+      : null,
+    monthChange: monthAgo ? latest.netWorth - monthAgo.netWorth : null,
+    monthPercent: monthAgo && monthAgo.netWorth !== 0
+      ? ((latest.netWorth - monthAgo.netWorth) / Math.abs(monthAgo.netWorth)) * 100
+      : null,
+  };
+});
+
+// Savings rate analytics
+const savingsRateData = computed(() => {
+  return monthlyTrends.value.map(trend => {
+    const income = parseFloat(trend.income) || 0;
+    const expenses = parseFloat(trend.expenses) || 0;
+    const net = parseFloat(trend.net) || 0;
+    const savingsRate = income > 0 ? (net / income) * 100 : 0;
+    return {
+      month: trend.month,
+      year: trend.year,
+      income,
+      expenses,
+      net,
+      savingsRate,
+    };
+  });
+});
+
+const savingsRateChartData = computed(() => ({
+  labels: savingsRateData.value.map(d => `${d.month} ${d.year}`),
+  datasets: [
+    {
+      label: 'Savings Rate %',
+      data: savingsRateData.value.map(d => d.savingsRate),
+      borderColor: '#8b5cf6',
+      backgroundColor: savingsRateData.value.map(d =>
+        d.savingsRate >= 20 ? 'rgba(34, 197, 94, 0.5)' :
+        d.savingsRate >= 10 ? 'rgba(234, 179, 8, 0.5)' :
+        d.savingsRate >= 0 ? 'rgba(251, 146, 60, 0.5)' :
+        'rgba(239, 68, 68, 0.5)'
+      ),
+      tension: 0.4,
+    },
+  ],
+}));
+
+const savingsRateSummary = computed(() => {
+  const rates = savingsRateData.value.filter(d => d.income > 0);
+  if (rates.length === 0) return null;
+
+  const avgRate = rates.reduce((sum, d) => sum + d.savingsRate, 0) / rates.length;
+  const totalSaved = rates.reduce((sum, d) => sum + d.net, 0);
+  const totalIncome = rates.reduce((sum, d) => sum + d.income, 0);
+  const currentRate = rates.length > 0 ? rates[rates.length - 1].savingsRate : 0;
+
+  // Find months with positive savings
+  const positiveSavingsMonths = rates.filter(d => d.net > 0).length;
+
+  // Best and worst months
+  const sortedByRate = [...rates].sort((a, b) => b.savingsRate - a.savingsRate);
+  const bestMonth = sortedByRate[0];
+  const worstMonth = sortedByRate[sortedByRate.length - 1];
+
+  return {
+    avgRate,
+    currentRate,
+    totalSaved,
+    totalIncome,
+    positiveSavingsMonths,
+    totalMonths: rates.length,
+    bestMonth,
+    worstMonth,
+  };
+});
+
+const savingsRateChartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: false,
+    },
+    tooltip: {
+      callbacks: {
+        label: function(context: any) {
+          return `Savings Rate: ${context.raw.toFixed(1)}%`;
+        },
+      },
+    },
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+      ticks: {
+        callback: function(value: string | number) {
+          return `${value}%`;
+        },
+      },
+    },
+  },
+};
 
 const chartOptions = {
   responsive: true,
@@ -415,7 +625,12 @@ async function fetchReports() {
 }
 
 watch(selectedPeriod, fetchReports);
-onMounted(fetchReports);
+onMounted(async () => {
+  loadNetWorthHistory();
+  await fetchReports();
+  // Record a snapshot after fetching data
+  recordNetWorthSnapshot();
+});
 </script>
 
 <template>
@@ -472,6 +687,36 @@ onMounted(fetchReports);
         <div>
           <h2 class="text-lg opacity-90 mb-1">Net Worth</h2>
           <p class="text-4xl font-bold">{{ formatCurrency(netWorthBreakdown.netWorth) }}</p>
+          <div v-if="netWorthChange" class="mt-2 flex gap-4 text-sm">
+            <div v-if="netWorthChange.weekChange !== null" class="flex items-center gap-1">
+              <svg
+                :class="['w-4 h-4', netWorthChange.weekChange >= 0 ? 'text-green-300' : 'text-red-300']"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  :d="netWorthChange.weekChange >= 0 ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'"
+                />
+              </svg>
+              <span class="opacity-90">
+                {{ netWorthChange.weekChange >= 0 ? '+' : '' }}{{ formatCurrency(netWorthChange.weekChange) }} (7d)
+              </span>
+            </div>
+            <div v-if="netWorthChange.monthChange !== null" class="flex items-center gap-1">
+              <svg
+                :class="['w-4 h-4', netWorthChange.monthChange >= 0 ? 'text-green-300' : 'text-red-300']"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  :d="netWorthChange.monthChange >= 0 ? 'M5 10l7-7m0 0l7 7m-7-7v18' : 'M19 14l-7 7m0 0l-7-7m7 7V3'"
+                />
+              </svg>
+              <span class="opacity-90">
+                {{ netWorthChange.monthChange >= 0 ? '+' : '' }}{{ formatCurrency(netWorthChange.monthChange) }} (30d)
+              </span>
+            </div>
+          </div>
         </div>
         <div class="flex gap-8 mt-4 md:mt-0">
           <div class="text-center">
@@ -483,6 +728,17 @@ onMounted(fetchReports);
             <p class="text-xl font-semibold">{{ formatCurrency(netWorthBreakdown.liabilities) }}</p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Net Worth History Chart -->
+    <div v-if="netWorthHistory.length > 1" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Net Worth History</h2>
+        <span class="text-sm text-gray-500 dark:text-gray-400">{{ netWorthHistory.length }} data points</span>
+      </div>
+      <div class="h-64">
+        <Line :data="netWorthChartData" :options="barChartOptions" />
       </div>
     </div>
 
@@ -603,6 +859,139 @@ onMounted(fetchReports);
           </div>
           <div v-else class="h-64">
             <Line :data="netChartData" :options="barChartOptions" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Savings Rate Analytics Section -->
+    <div v-if="savingsRateSummary" class="mt-6">
+      <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Savings Rate Analytics</h2>
+
+      <!-- Savings Rate Summary Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Average Savings Rate</h3>
+          <p :class="[
+            'text-3xl font-bold mt-1',
+            savingsRateSummary.avgRate >= 20 ? 'text-green-600' :
+            savingsRateSummary.avgRate >= 10 ? 'text-yellow-600' :
+            savingsRateSummary.avgRate >= 0 ? 'text-orange-600' : 'text-red-600'
+          ]">
+            {{ savingsRateSummary.avgRate.toFixed(1) }}%
+          </p>
+          <p class="text-xs text-gray-400 mt-1">
+            {{ savingsRateSummary.avgRate >= 20 ? 'Excellent!' :
+               savingsRateSummary.avgRate >= 15 ? 'Great progress!' :
+               savingsRateSummary.avgRate >= 10 ? 'Good start' : 'Room to improve' }}
+          </p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Current Month Rate</h3>
+          <p :class="[
+            'text-3xl font-bold mt-1',
+            savingsRateSummary.currentRate >= 0 ? 'text-green-600' : 'text-red-600'
+          ]">
+            {{ savingsRateSummary.currentRate.toFixed(1) }}%
+          </p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Saved (12mo)</h3>
+          <p :class="[
+            'text-3xl font-bold mt-1',
+            savingsRateSummary.totalSaved >= 0 ? 'text-green-600' : 'text-red-600'
+          ]">
+            {{ formatCurrency(savingsRateSummary.totalSaved) }}
+          </p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+          <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Positive Months</h3>
+          <p class="text-3xl font-bold mt-1 text-gray-900 dark:text-white">
+            {{ savingsRateSummary.positiveSavingsMonths }}/{{ savingsRateSummary.totalMonths }}
+          </p>
+          <p class="text-xs text-gray-400 mt-1">
+            {{ ((savingsRateSummary.positiveSavingsMonths / savingsRateSummary.totalMonths) * 100).toFixed(0) }}% success rate
+          </p>
+        </div>
+      </div>
+
+      <!-- Savings Rate Chart and Best/Worst Months -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Savings Rate Chart -->
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Savings Rate Trend</h2>
+            <p class="text-sm text-gray-500">Monthly savings as % of income</p>
+          </div>
+          <div class="p-4">
+            <div class="h-64">
+              <Bar :data="savingsRateChartData" :options="savingsRateChartOptions" />
+            </div>
+            <div class="flex justify-center gap-4 mt-4 text-xs">
+              <div class="flex items-center gap-1">
+                <div class="w-3 h-3 rounded" style="background-color: rgba(34, 197, 94, 0.5)"></div>
+                <span class="text-gray-500">20%+ (Excellent)</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="w-3 h-3 rounded" style="background-color: rgba(234, 179, 8, 0.5)"></div>
+                <span class="text-gray-500">10-20% (Good)</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="w-3 h-3 rounded" style="background-color: rgba(251, 146, 60, 0.5)"></div>
+                <span class="text-gray-500">0-10% (Fair)</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="w-3 h-3 rounded" style="background-color: rgba(239, 68, 68, 0.5)"></div>
+                <span class="text-gray-500">Negative (Loss)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Best & Worst Months -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Performance Highlights</h2>
+          </div>
+          <div class="p-4 space-y-4">
+            <div v-if="savingsRateSummary.bestMonth" class="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+              <p class="text-sm font-medium text-green-800 dark:text-green-400">Best Month</p>
+              <p class="text-lg font-bold text-green-700 dark:text-green-300 mt-1">
+                {{ savingsRateSummary.bestMonth.month }} {{ savingsRateSummary.bestMonth.year }}
+              </p>
+              <div class="flex justify-between mt-2 text-sm">
+                <span class="text-green-600 dark:text-green-400">{{ savingsRateSummary.bestMonth.savingsRate.toFixed(1) }}% saved</span>
+                <span class="text-green-600 dark:text-green-400">{{ formatCurrency(savingsRateSummary.bestMonth.net) }}</span>
+              </div>
+            </div>
+
+            <div v-if="savingsRateSummary.worstMonth" class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
+              <p class="text-sm font-medium text-red-800 dark:text-red-400">Lowest Month</p>
+              <p class="text-lg font-bold text-red-700 dark:text-red-300 mt-1">
+                {{ savingsRateSummary.worstMonth.month }} {{ savingsRateSummary.worstMonth.year }}
+              </p>
+              <div class="flex justify-between mt-2 text-sm">
+                <span class="text-red-600 dark:text-red-400">{{ savingsRateSummary.worstMonth.savingsRate.toFixed(1) }}% saved</span>
+                <span class="text-red-600 dark:text-red-400">{{ formatCurrency(savingsRateSummary.worstMonth.net) }}</span>
+              </div>
+            </div>
+
+            <!-- Savings Goal Progress -->
+            <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+              <p class="text-sm font-medium text-purple-800 dark:text-purple-400">Recommended Target</p>
+              <p class="text-lg font-bold text-purple-700 dark:text-purple-300 mt-1">20% Savings Rate</p>
+              <div class="mt-2">
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div
+                    class="bg-purple-600 h-2 rounded-full transition-all"
+                    :style="{ width: `${Math.min(100, (savingsRateSummary.avgRate / 20) * 100)}%` }"
+                  ></div>
+                </div>
+                <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                  {{ ((savingsRateSummary.avgRate / 20) * 100).toFixed(0) }}% of target
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

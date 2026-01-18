@@ -29,6 +29,16 @@ const router = createRouter({
       component: () => import('../views/BudgetsView.vue'),
     },
     {
+      path: '/categories',
+      name: 'categories',
+      component: () => import('../views/CategoriesView.vue'),
+    },
+    {
+      path: '/payees',
+      name: 'payees',
+      component: () => import('../views/PayeesView.vue'),
+    },
+    {
       path: '/goals',
       name: 'goals',
       component: () => import('../views/GoalsView.vue'),
@@ -37,6 +47,11 @@ const router = createRouter({
       path: '/recurring',
       name: 'recurring',
       component: () => import('../views/RecurringView.vue'),
+    },
+    {
+      path: '/bill-calendar',
+      name: 'bill-calendar',
+      component: () => import('../views/BillCalendarView.vue'),
     },
     {
       path: '/reports',

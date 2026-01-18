@@ -199,6 +199,69 @@ const formatCurrency = (value: string | number) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
 };
 
+// CSV Export function
+function exportToCSV() {
+  const transactions = filteredTransactions.value;
+  if (transactions.length === 0) {
+    alert('No transactions to export.');
+    return;
+  }
+
+  const lines: string[] = [];
+
+  // CSV Header
+  lines.push('Date,Description,Type,Amount,Account,Category,Payee,Notes,Is Split,Parent Transaction');
+
+  // Data rows
+  for (const tx of transactions) {
+    const account = accountsStore.accountsById[tx.account_id]?.name || '';
+    const category = tx.category_id ? (categoriesStore.getCategoryById(tx.category_id)?.name || '') : '';
+
+    // Escape and quote fields that might contain commas or quotes
+    const escapeCsvField = (field: string | null | undefined) => {
+      if (!field) return '';
+      const escaped = field.replace(/"/g, '""');
+      return escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')
+        ? `"${escaped}"`
+        : escaped;
+    };
+
+    lines.push([
+      tx.date,
+      escapeCsvField(tx.description),
+      tx.transaction_type,
+      tx.amount,
+      escapeCsvField(account),
+      escapeCsvField(category),
+      escapeCsvField(tx.payee),
+      escapeCsvField(tx.notes),
+      tx.is_split ? 'Yes' : 'No',
+      tx.parent_transaction_id || '',
+    ].join(','));
+  }
+
+  // Create and download file
+  const csvContent = lines.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+
+  // Generate filename with date range if applicable
+  let filename = 'indibudget-transactions';
+  if (dateRange.value.start && dateRange.value.end) {
+    filename += `-${dateRange.value.start}-to-${dateRange.value.end}`;
+  } else if (dateRange.value.start) {
+    filename += `-from-${dateRange.value.start}`;
+  } else if (dateRange.value.end) {
+    filename += `-to-${dateRange.value.end}`;
+  }
+  filename += '.csv';
+
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 async function handleSubmit() {
   try {
     await transactionsStore.createTransaction(newTransaction.value);
@@ -404,6 +467,16 @@ onMounted(async () => {
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Transactions</h1>
       <div class="flex gap-3">
+        <button
+          @click="exportToCSV"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+          title="Export filtered transactions to CSV"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export CSV
+        </button>
         <button
           v-if="uncategorizedCount > 0"
           @click="autoCategorize"

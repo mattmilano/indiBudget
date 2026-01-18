@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useAccountsStore } from '../stores';
+import { ref, onMounted, computed } from 'vue';
+import { useAccountsStore, useTransactionsStore } from '../stores';
 import type { Account, CreateAccountRequest, AccountType } from '../types';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ReconciliationModal from '../components/ReconciliationModal.vue';
+import { format } from 'date-fns';
 
 const accountsStore = useAccountsStore();
+const transactionsStore = useTransactionsStore();
 
 const showAddModal = ref(false);
 const showEditModal = ref(false);
@@ -16,6 +18,17 @@ const editingAccount = ref<Account | null>(null);
 // Reconciliation state
 const showReconcileModal = ref(false);
 const reconcileAccount = ref<Account | null>(null);
+
+// Transfer state
+const showTransferModal = ref(false);
+const transferProcessing = ref(false);
+const transferForm = ref({
+  fromAccountId: '',
+  toAccountId: '',
+  amount: '',
+  date: format(new Date(), 'yyyy-MM-dd'),
+  notes: '',
+});
 
 const newAccount = ref<CreateAccountRequest>({
   name: '',
@@ -173,6 +186,77 @@ function handleReconcileComplete() {
   accountsStore.fetchAccounts();
 }
 
+// Transfer functions
+const availableToAccounts = computed(() => {
+  return accountsStore.accounts.filter(a => a.id !== transferForm.value.fromAccountId);
+});
+
+function openTransferModal() {
+  transferForm.value = {
+    fromAccountId: accountsStore.accounts[0]?.id || '',
+    toAccountId: accountsStore.accounts[1]?.id || '',
+    amount: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    notes: '',
+  };
+  showTransferModal.value = true;
+}
+
+async function executeTransfer() {
+  if (!transferForm.value.fromAccountId || !transferForm.value.toAccountId || !transferForm.value.amount) {
+    alert('Please fill in all required fields.');
+    return;
+  }
+
+  if (transferForm.value.fromAccountId === transferForm.value.toAccountId) {
+    alert('Cannot transfer to the same account.');
+    return;
+  }
+
+  const amount = parseFloat(transferForm.value.amount);
+  if (isNaN(amount) || amount <= 0) {
+    alert('Please enter a valid amount greater than 0.');
+    return;
+  }
+
+  transferProcessing.value = true;
+  try {
+    const fromAccount = accountsStore.accountsById[transferForm.value.fromAccountId];
+    const toAccount = accountsStore.accountsById[transferForm.value.toAccountId];
+
+    // Create expense transaction from source account
+    await transactionsStore.createTransaction({
+      account_id: transferForm.value.fromAccountId,
+      transaction_type: 'transfer',
+      amount: transferForm.value.amount,
+      date: transferForm.value.date,
+      description: `Transfer to ${toAccount?.name || 'Unknown'}`,
+      notes: transferForm.value.notes || undefined,
+    });
+
+    // Create income transaction to destination account
+    await transactionsStore.createTransaction({
+      account_id: transferForm.value.toAccountId,
+      transaction_type: 'transfer',
+      amount: transferForm.value.amount,
+      date: transferForm.value.date,
+      description: `Transfer from ${fromAccount?.name || 'Unknown'}`,
+      notes: transferForm.value.notes || undefined,
+    });
+
+    // Refresh accounts to show updated balances
+    await accountsStore.fetchAccounts();
+
+    showTransferModal.value = false;
+    alert(`Successfully transferred ${formatCurrency(amount, fromAccount?.currency || 'USD')} from ${fromAccount?.name} to ${toAccount?.name}.`);
+  } catch (e) {
+    console.error('Failed to complete transfer:', e);
+    alert('Failed to complete transfer. Please try again.');
+  } finally {
+    transferProcessing.value = false;
+  }
+}
+
 onMounted(() => {
   accountsStore.fetchAccounts();
 });
@@ -182,15 +266,27 @@ onMounted(() => {
   <div class="p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Accounts</h1>
-      <button
-        @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        Add Account
-      </button>
+      <div class="flex gap-3">
+        <button
+          v-if="accountsStore.accounts.length >= 2"
+          @click="openTransferModal"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          Transfer Money
+        </button>
+        <button
+          @click="showAddModal = true"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Account
+        </button>
+      </div>
     </div>
 
     <!-- Total Balance Card -->
@@ -517,5 +613,120 @@ onMounted(() => {
       @close="showReconcileModal = false; reconcileAccount = null"
       @complete="handleReconcileComplete"
     />
+
+    <!-- Transfer Modal -->
+    <div
+      v-if="showTransferModal"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="showTransferModal = false"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3">
+          <div class="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
+            <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Transfer Money</h3>
+        </div>
+        <form @submit.prevent="executeTransfer" class="p-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              From Account <span class="text-red-500">*</span>
+            </label>
+            <select
+              v-model="transferForm.fromAccountId"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option v-for="account in accountsStore.accounts" :key="account.id" :value="account.id">
+                {{ account.name }} ({{ formatCurrency(account.balance, account.currency || 'USD') }})
+              </option>
+            </select>
+          </div>
+
+          <div class="flex justify-center">
+            <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-full">
+              <svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              To Account <span class="text-red-500">*</span>
+            </label>
+            <select
+              v-model="transferForm.toAccountId"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option v-for="account in availableToAccounts" :key="account.id" :value="account.id">
+                {{ account.name }} ({{ formatCurrency(account.balance, account.currency || 'USD') }})
+              </option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Amount <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="transferForm.amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                placeholder="0.00"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
+              <input
+                v-model="transferForm.date"
+                type="date"
+                required
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes (optional)</label>
+            <input
+              v-model="transferForm.notes"
+              type="text"
+              placeholder="e.g., Monthly savings contribution"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div class="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              @click="showTransferModal = false"
+              :disabled="transferProcessing"
+              class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              :disabled="transferProcessing"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <svg v-if="transferProcessing" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              {{ transferProcessing ? 'Transferring...' : 'Transfer' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
