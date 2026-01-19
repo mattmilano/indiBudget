@@ -39,5 +39,14 @@
     "shortDescription": "Personal budget application",
     "longDescription": "A calendar-focused personal budget application for tracking income, expenses, and financial goals."
   },
-  "plugins": {}
+  "plugins": {
+    "http": {
+      "scope": {
+        "allow": [
+          { "url": "https://*.simplefin.org/*" },
+          { "url": "https://beta-bridge.simplefin.org/*" }
+        ]
+      }
+    }
+  }
 }

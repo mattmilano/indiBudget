@@ -389,3 +389,60 @@ export interface CreateSplitTransactionRequest {
   parent_transaction_id: string;
   parts: SplitPart[];
 }
+
+// SimpleFIN Integration Types
+export interface SimpleFINConfig {
+  accessUrl: string | null;
+  lastSync: string | null;
+  autoSync: boolean;
+  syncInterval: 'manual' | 'daily' | 'weekly';
+  accountMappings: SimpleFINAccountMapping[];
+}
+
+export interface SimpleFINAccountMapping {
+  simplefinAccountId: string;
+  simplefinAccountName: string;
+  simplefinInstitution: string;
+  indibudgetAccountId: string | null; // null = not mapped / skip
+}
+
+export interface SimpleFINOrganization {
+  domain: string;
+  name: string;
+  sfin_url: string;
+  url: string;
+}
+
+export interface SimpleFINAccount {
+  id: string;
+  name: string;
+  currency: string;
+  balance: string;
+  'available-balance'?: string;
+  'balance-date': number; // Unix timestamp
+  org: SimpleFINOrganization;
+  transactions: SimpleFINTransaction[];
+}
+
+export interface SimpleFINTransaction {
+  id: string;
+  posted: number; // Unix timestamp
+  amount: string;
+  description: string;
+  payee?: string;
+  memo?: string;
+  pending: boolean;
+}
+
+export interface SimpleFINResponse {
+  errors: string[];
+  accounts: SimpleFINAccount[];
+}
+
+export interface SimpleFINSyncResult {
+  accountsFound: number;
+  transactionsImported: number;
+  transactionsSkipped: number;
+  errors: string[];
+}
+

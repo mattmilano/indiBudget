@@ -255,3 +255,50 @@ export const unsplitTransaction = async (parentTransactionId: string): Promise<v
     is_split: false,
   });
 };
+
+// SimpleFIN Integration - Import a single transaction with duplicate detection
+export const importSingleTransaction = async (
+  request: CreateTransactionRequest,
+  importedId: string
+): Promise<{ imported: boolean; duplicate: boolean; transaction?: Transaction }> => {
+  // Check for existing transaction with same imported_id in notes
+  // or same date + description + amount + account (fallback)
+  const existingTransactions = await getTransactions({
+    account_ids: [request.account_id],
+    start_date: request.date,
+    end_date: request.date,
+  });
+
+  // Check for duplicate by looking for the imported_id marker in notes
+  const isDuplicate = existingTransactions.some(tx => {
+    // Check if notes contain the imported_id
+    if (tx.notes?.includes(importedId)) {
+      return true;
+    }
+    // Fallback: check if same date, amount, and similar description
+    if (
+      tx.date === request.date &&
+      Math.abs(parseFloat(tx.amount) - parseFloat(request.amount)) < 0.01 &&
+      tx.description.toLowerCase().includes(request.description.toLowerCase().substring(0, 20))
+    ) {
+      return true;
+    }
+    return false;
+  });
+
+  if (isDuplicate) {
+    return { imported: false, duplicate: true };
+  }
+
+  // Add the imported_id to notes for future duplicate detection
+  const notesWithId = request.notes
+    ? `${request.notes} [ID:${importedId}]`
+    : `[ID:${importedId}]`;
+
+  const transaction = await createTransaction({
+    ...request,
+    notes: notesWithId,
+  });
+
+  return { imported: true, duplicate: false, transaction };
+};

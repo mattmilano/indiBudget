@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, nextTick } from 'vue';
 import { save, open } from '@tauri-apps/plugin-dialog';
 import * as api from '../services/api';
+import * as simplefin from '../services/simplefin';
 import { useTheme, type ThemeMode } from '../composables/useTheme';
-import type { EncryptionStatus, BackupMetadata } from '../types';
+import { useAccountsStore } from '../stores';
+import type { EncryptionStatus, BackupMetadata, SimpleFINConfig, SimpleFINAccount } from '../types';
 
 const { currentTheme, setTheme } = useTheme();
+const accountsStore = useAccountsStore();
 
 const settings = ref({
   currency: 'USD',
@@ -127,6 +130,12 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to get debug info:', e);
   }
+
+  // Load accounts for SimpleFIN mapping
+  await accountsStore.fetchAccounts();
+
+  // Load SimpleFIN config
+  simplefinConfig.value = simplefin.getConfig();
 });
 
 const currencies = [
@@ -378,6 +387,160 @@ async function changeEncryptionPassword() {
   } finally {
     isEncryptionLoading.value = false;
   }
+}
+
+// SimpleFIN Integration State
+const simplefinConfig = ref<SimpleFINConfig>(simplefin.getConfig());
+const simplefinAccessUrl = ref('');
+const simplefinMessage = ref('');
+const simplefinError = ref('');
+const simplefinLoading = ref(false);
+const simplefinProgress = ref('');
+const simplefinAccounts = ref<SimpleFINAccount[]>([]);
+const showAccountMapping = ref(false);
+const simplefinSyncResult = ref<{ imported: number; skipped: number; errors: string[] } | null>(null);
+
+// Helper to ensure UI updates before heavy operations
+function waitForPaint(): Promise<void> {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resolve();
+      });
+    });
+  });
+}
+
+function clearSimplefinMessages() {
+  simplefinMessage.value = '';
+  simplefinError.value = '';
+  simplefinProgress.value = '';
+  simplefinSyncResult.value = null;
+}
+
+async function testSimplefinConnection() {
+  clearSimplefinMessages();
+
+  if (!simplefinAccessUrl.value.trim()) {
+    simplefinError.value = 'Please enter your SimpleFIN access URL.';
+    return;
+  }
+
+  simplefinLoading.value = true;
+  simplefinProgress.value = 'Testing connection...';
+  await nextTick();
+  await waitForPaint();
+
+  try {
+    const result = await simplefin.testConnection(simplefinAccessUrl.value);
+
+    if (result.success) {
+      simplefinAccounts.value = result.accounts;
+      simplefinMessage.value = `Connected successfully! Found ${result.accounts.length} account(s).`;
+
+      // Create default mappings
+      const mappings = simplefin.createDefaultMappings(result.accounts);
+
+      // Save the access URL and mappings
+      simplefinConfig.value = {
+        ...simplefinConfig.value,
+        accessUrl: simplefinAccessUrl.value,
+        accountMappings: mappings,
+      };
+      simplefin.saveConfig(simplefinConfig.value);
+
+      // Show account mapping modal
+      showAccountMapping.value = true;
+    } else {
+      simplefinError.value = result.error || 'Failed to connect to SimpleFIN.';
+    }
+  } catch (e) {
+    simplefinError.value = e instanceof Error ? e.message : 'Failed to connect to SimpleFIN.';
+  } finally {
+    simplefinLoading.value = false;
+    simplefinProgress.value = '';
+  }
+}
+
+async function syncSimplefin() {
+  clearSimplefinMessages();
+
+  if (!simplefinConfig.value.accessUrl) {
+    simplefinError.value = 'SimpleFIN is not connected. Please connect first.';
+    return;
+  }
+
+  // Check if there are any mapped accounts
+  const mappedAccounts = simplefinConfig.value.accountMappings.filter(m => m.indibudgetAccountId);
+  if (mappedAccounts.length === 0) {
+    simplefinError.value = 'No accounts are mapped. Please map at least one account.';
+    showAccountMapping.value = true;
+    return;
+  }
+
+  simplefinLoading.value = true;
+  await nextTick();
+  await waitForPaint();
+
+  try {
+    const result = await simplefin.syncTransactions(
+      simplefinConfig.value.accessUrl,
+      simplefinConfig.value.accountMappings,
+      (msg) => { simplefinProgress.value = msg; }
+    );
+
+    simplefinSyncResult.value = {
+      imported: result.transactionsImported,
+      skipped: result.transactionsSkipped,
+      errors: result.errors,
+    };
+
+    if (result.errors.length === 0) {
+      simplefinMessage.value = `Sync complete! Imported ${result.transactionsImported} transactions, skipped ${result.transactionsSkipped} duplicates.`;
+    } else {
+      simplefinError.value = `Sync completed with ${result.errors.length} error(s). Imported ${result.transactionsImported}, skipped ${result.transactionsSkipped}.`;
+    }
+
+    // Update last sync in config
+    simplefinConfig.value = simplefin.getConfig();
+  } catch (e) {
+    simplefinError.value = e instanceof Error ? e.message : 'Sync failed.';
+  } finally {
+    simplefinLoading.value = false;
+    simplefinProgress.value = '';
+  }
+}
+
+function updateAccountMapping(simplefinAccountId: string, indibudgetAccountId: string | null) {
+  const mapping = simplefinConfig.value.accountMappings.find(m => m.simplefinAccountId === simplefinAccountId);
+  if (mapping) {
+    mapping.indibudgetAccountId = indibudgetAccountId;
+    simplefin.saveConfig(simplefinConfig.value);
+  }
+}
+
+function disconnectSimplefin() {
+  if (confirm('Are you sure you want to disconnect SimpleFIN? Your imported transactions will remain.')) {
+    simplefin.clearConfig();
+    simplefinConfig.value = simplefin.getConfig();
+    simplefinAccessUrl.value = '';
+    simplefinAccounts.value = [];
+    showAccountMapping.value = false;
+    clearSimplefinMessages();
+    simplefinMessage.value = 'SimpleFIN disconnected.';
+  }
+}
+
+function formatLastSync(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 </script>
 
@@ -792,6 +955,264 @@ async function changeEncryptionPassword() {
                 </select>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SimpleFIN Bank Sync -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Bank Sync</h2>
+            <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">SimpleFIN</span>
+          </div>
+        </div>
+        <div class="p-4 space-y-4">
+          <!-- Info box -->
+          <div class="px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+            <p class="text-sm text-blue-800 dark:text-blue-200">
+              <strong>SimpleFIN</strong> is a privacy-focused bank aggregation service (~$1.50/month).
+              Your bank credentials stay with SimpleFIN - indiBudget only receives transactions.
+            </p>
+            <a
+              href="https://simplefin.org"
+              target="_blank"
+              class="inline-flex items-center gap-1 mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Learn more at simplefin.org
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
+
+          <!-- Status messages -->
+          <div
+            v-if="simplefinMessage"
+            class="px-4 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm"
+          >
+            {{ simplefinMessage }}
+          </div>
+          <div
+            v-if="simplefinError"
+            class="px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm"
+          >
+            {{ simplefinError }}
+          </div>
+          <div
+            v-if="simplefinProgress"
+            class="px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-sm flex items-center gap-2"
+          >
+            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {{ simplefinProgress }}
+          </div>
+
+          <!-- Not connected: show setup form -->
+          <div v-if="!simplefinConfig.accessUrl" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                SimpleFIN Access URL
+              </label>
+              <input
+                v-model="simplefinAccessUrl"
+                type="password"
+                placeholder="Paste your access URL from SimpleFIN"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Get this from your SimpleFIN dashboard after connecting your banks.
+              </p>
+            </div>
+            <button
+              @click="testSimplefinConnection"
+              :disabled="simplefinLoading"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <svg v-if="simplefinLoading" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              {{ simplefinLoading ? 'Connecting...' : 'Connect SimpleFIN' }}
+            </button>
+          </div>
+
+          <!-- Connected: show status and sync options -->
+          <div v-else class="space-y-4">
+            <!-- Connection status -->
+            <div class="flex items-center justify-between py-2 px-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-sm font-medium text-green-700 dark:text-green-400">SimpleFIN Connected</span>
+              </div>
+              <span class="text-sm text-gray-500 dark:text-gray-400">
+                {{ simplefinConfig.accountMappings.filter(m => m.indibudgetAccountId).length }} of {{ simplefinConfig.accountMappings.length }} accounts mapped
+              </span>
+            </div>
+
+            <!-- Last sync info -->
+            <div class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+              <span class="text-sm text-gray-600 dark:text-gray-400">Last sync:</span>
+              <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatLastSync(simplefinConfig.lastSync) }}</span>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex flex-wrap gap-3">
+              <button
+                @click="syncSimplefin"
+                :disabled="simplefinLoading"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <svg v-if="simplefinLoading" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ simplefinLoading ? 'Syncing...' : 'Sync Now' }}
+              </button>
+              <button
+                @click="showAccountMapping = true"
+                class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Manage Account Mapping
+              </button>
+              <button
+                @click="disconnectSimplefin"
+                class="px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
+
+            <!-- Sync results -->
+            <div v-if="simplefinSyncResult" class="pt-2">
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                Last sync: {{ simplefinSyncResult.imported }} imported, {{ simplefinSyncResult.skipped }} duplicates skipped
+              </p>
+              <div v-if="simplefinSyncResult.errors.length > 0" class="mt-2 text-sm text-red-600 dark:text-red-400">
+                <p class="font-medium">Errors:</p>
+                <ul class="list-disc list-inside">
+                  <li v-for="(error, i) in simplefinSyncResult.errors.slice(0, 5)" :key="i">{{ error }}</li>
+                  <li v-if="simplefinSyncResult.errors.length > 5">
+                    ...and {{ simplefinSyncResult.errors.length - 5 }} more
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Auto-sync settings -->
+            <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+              <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Auto-Sync Settings</h3>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm text-gray-900 dark:text-white">Enable Auto-Sync</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Automatically sync when opening the app</p>
+                  </div>
+                  <input
+                    v-model="simplefinConfig.autoSync"
+                    type="checkbox"
+                    class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+                    @change="simplefin.saveConfig(simplefinConfig)"
+                  />
+                </div>
+                <div v-if="simplefinConfig.autoSync" class="flex items-center gap-3">
+                  <label class="text-sm text-gray-600 dark:text-gray-400">Sync frequency:</label>
+                  <select
+                    v-model="simplefinConfig.syncInterval"
+                    class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    @change="simplefin.saveConfig(simplefinConfig)"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account Mapping Modal -->
+      <div
+        v-if="showAccountMapping"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        @click.self="showAccountMapping = false"
+      >
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Map SimpleFIN Accounts</h3>
+            <button
+              @click="showAccountMapping = false"
+              class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 overflow-y-auto max-h-[60vh]">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Map each SimpleFIN account to an indiBudget account. Transactions will be imported from mapped accounts only.
+            </p>
+
+            <div v-if="simplefinConfig.accountMappings.length === 0" class="text-center py-8 text-gray-500">
+              No accounts found. Please reconnect SimpleFIN.
+            </div>
+
+            <div v-else class="space-y-4">
+              <div
+                v-for="mapping in simplefinConfig.accountMappings"
+                :key="mapping.simplefinAccountId"
+                class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex-1">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ mapping.simplefinAccountName }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ mapping.simplefinInstitution }}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                    </svg>
+                    <select
+                      :value="mapping.indibudgetAccountId || ''"
+                      @change="updateAccountMapping(mapping.simplefinAccountId, ($event.target as HTMLSelectElement).value || null)"
+                      class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm min-w-[200px]"
+                    >
+                      <option value="">Skip (don't import)</option>
+                      <option
+                        v-for="account in accountsStore.accounts"
+                        :key="account.id"
+                        :value="account.id"
+                      >
+                        {{ account.name }} ({{ account.account_type }})
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+            <button
+              @click="showAccountMapping = false"
+              class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+              Close
+            </button>
+            <button
+              @click="showAccountMapping = false; syncSimplefin()"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Save & Sync
+            </button>
           </div>
         </div>
       </div>
