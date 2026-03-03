@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Mobile icons (not building for mobile)
+src-tauri/icons/android/
+src-tauri/icons/ios/
