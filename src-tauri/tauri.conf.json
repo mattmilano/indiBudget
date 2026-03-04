@@ -47,14 +47,5 @@
       }
     }
   },
-  "plugins": {
-    "http": {
-      "scope": {
-        "allow": [
-          { "url": "https://*.simplefin.org/*" },
-          { "url": "https://beta-bridge.simplefin.org/*" }
-        ]
-      }
-    }
-  }
+  "plugins": {}
 }
