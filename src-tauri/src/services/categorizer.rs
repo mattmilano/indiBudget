@@ -62,7 +62,8 @@ impl Categorizer {
             };
 
             if matches {
-                if best_match.is_none() || rule.priority > best_match.unwrap().1 {
+                let dominated = best_match.map_or(false, |(_, priority)| rule.priority <= priority);
+                if !dominated {
                     best_match = Some((rule, rule.priority));
                 }
             }
@@ -90,7 +91,8 @@ impl Categorizer {
             };
 
             if matches {
-                if best_match.is_none() || rule.priority > best_match.unwrap().1 {
+                let dominated = best_match.map_or(false, |(_, priority)| rule.priority <= priority);
+                if !dominated {
                     best_match = Some((rule, rule.priority));
                 }
             }

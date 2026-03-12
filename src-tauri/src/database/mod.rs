@@ -62,13 +62,19 @@ impl Database {
     }
 
     fn run_migrations(&self) -> DbResult<()> {
-        let conn = self.connection.lock().unwrap();
+        let conn = self
+            .connection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         migrations::run_all(&conn)?;
         Ok(())
     }
 
     fn seed_default_data(&self) -> DbResult<()> {
-        let conn = self.connection.lock().unwrap();
+        let conn = self
+            .connection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Ensure all default categories exist (use INSERT OR IGNORE to handle existing ones)
         // This allows new categories to be added in updates without breaking existing databases
@@ -99,7 +105,10 @@ impl Database {
     where
         F: FnOnce(&Connection) -> DbResult<T>,
     {
-        let conn = self.connection.lock().unwrap();
+        let conn = self
+            .connection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&conn)
     }
 
@@ -107,7 +116,10 @@ impl Database {
     where
         F: FnOnce(&mut Connection) -> DbResult<T>,
     {
-        let mut conn = self.connection.lock().unwrap();
+        let mut conn = self
+            .connection
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&mut conn)
     }
 }

@@ -259,14 +259,41 @@ pub fn get_transactions(
     conn: &Connection,
     filter: &TransactionFilter,
 ) -> DbResult<Vec<Transaction>> {
-    // Fetch all transactions and filter in memory
-    // This is simpler and avoids SQL parameter binding complexity
-    let sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
+    // Build dynamic SQL query with WHERE clauses for efficiency
+    let base_sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
          status, is_split, parent_transaction_id, recurring_id, transfer_account_id, imported_id, created_at, updated_at
-         FROM transactions ORDER BY date DESC, created_at DESC";
+         FROM transactions";
 
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([], |row| transaction_from_row(row))?;
+    let mut conditions: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    // Build WHERE conditions
+    if let Some(ref start) = filter.start_date {
+        conditions.push(format!("date >= ?{}", params.len() + 1));
+        params.push(Box::new(start.format("%Y-%m-%d").to_string()));
+    }
+
+    if let Some(ref end) = filter.end_date {
+        conditions.push(format!("date <= ?{}", params.len() + 1));
+        params.push(Box::new(end.format("%Y-%m-%d").to_string()));
+    }
+
+    // Build full SQL
+    let sql = if conditions.is_empty() {
+        format!("{} ORDER BY date DESC, created_at DESC", base_sql)
+    } else {
+        format!(
+            "{} WHERE {} ORDER BY date DESC, created_at DESC",
+            base_sql,
+            conditions.join(" AND ")
+        )
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Convert params to references for rusqlite
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(param_refs.as_slice(), |row| transaction_from_row(row))?;
 
     let mut transactions = Vec::new();
     let mut error_count = 0;
@@ -274,7 +301,7 @@ pub fn get_transactions(
     for result in rows {
         match result {
             Ok(tx) => {
-                // Apply filters
+                // Apply remaining filters that are harder to express in SQL
                 if let Some(ref account_ids) = filter.account_ids {
                     if !account_ids.contains(&tx.account_id) {
                         continue;
@@ -286,16 +313,6 @@ pub fn get_transactions(
                             continue;
                         }
                     } else {
-                        continue;
-                    }
-                }
-                if let Some(start) = filter.start_date {
-                    if tx.date < start {
-                        continue;
-                    }
-                }
-                if let Some(end) = filter.end_date {
-                    if tx.date > end {
                         continue;
                     }
                 }

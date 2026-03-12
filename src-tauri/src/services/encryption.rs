@@ -23,6 +23,8 @@ pub enum EncryptionError {
     KeyDerivationFailed(String),
     #[error("Invalid password")]
     InvalidPassword,
+    #[error("Password too weak: {0}")]
+    WeakPassword(String),
     #[error("Encryption not enabled")]
     NotEnabled,
     #[error("IO error: {0}")]
@@ -30,6 +32,8 @@ pub enum EncryptionError {
     #[error("Serialization error: {0}")]
     Serialization(String),
 }
+
+const MIN_PASSWORD_LENGTH: usize = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptionConfig {
@@ -82,6 +86,8 @@ impl EncryptionService {
     }
 
     pub fn enable(&mut self, password: &str) -> Result<(), EncryptionError> {
+        validate_password_strength(password)?;
+
         let mut rng = rand::thread_rng();
         let salt: Vec<u8> = (0..SALT_SIZE).map(|_| rng.gen()).collect();
 
@@ -155,6 +161,9 @@ impl EncryptionService {
         old_password: &str,
         new_password: &str,
     ) -> Result<(), EncryptionError> {
+        // Validate new password strength first
+        validate_password_strength(new_password)?;
+
         // Verify old password
         self.unlock(old_password)?;
 
@@ -262,6 +271,27 @@ impl EncryptionService {
 
         Ok(())
     }
+}
+
+fn validate_password_strength(password: &str) -> Result<(), EncryptionError> {
+    if password.len() < MIN_PASSWORD_LENGTH {
+        return Err(EncryptionError::WeakPassword(format!(
+            "Password must be at least {} characters",
+            MIN_PASSWORD_LENGTH
+        )));
+    }
+
+    let has_uppercase = password.chars().any(|c| c.is_uppercase());
+    let has_lowercase = password.chars().any(|c| c.is_lowercase());
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+
+    if !has_uppercase || !has_lowercase || !has_digit {
+        return Err(EncryptionError::WeakPassword(
+            "Password must contain uppercase, lowercase, and a number".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE], EncryptionError> {
