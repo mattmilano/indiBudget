@@ -34,14 +34,22 @@ pub fn run() {
             commands::delete_transaction,
             // Categories
             commands::get_categories,
+            commands::get_category,
             commands::create_category,
+            commands::update_category,
+            commands::delete_category,
             // Budgets
             commands::create_budget,
             commands::get_budgets,
+            commands::get_budget,
+            commands::update_budget,
+            commands::delete_budget,
             commands::get_budget_status,
             // Recurring
             commands::create_recurring,
             commands::get_recurring,
+            commands::get_recurring_by_id,
+            commands::update_recurring,
             commands::get_upcoming_recurring,
             commands::detect_recurring_patterns,
             commands::create_recurring_from_detected,
@@ -51,6 +59,9 @@ pub fn run() {
             // Goals
             commands::create_goal,
             commands::get_goals,
+            commands::get_goal,
+            commands::update_goal,
+            commands::delete_goal,
             commands::update_goal_progress,
             // Import
             commands::detect_import_columns,

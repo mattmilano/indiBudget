@@ -24,12 +24,24 @@ impl AppState {
     pub fn init_database(&self) -> Result<(), String> {
         let db_path = database::get_database_path();
         let db = Database::new(db_path.clone()).map_err(|e| e.to_string())?;
-        *self.db.lock().unwrap() = Some(db);
+
+        // Lock mutex, recovering from poison if a previous thread panicked
+        let mut db_guard = self
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *db_guard = Some(db);
+        drop(db_guard);
 
         // Initialize encryption service
         let data_dir = db_path.parent().unwrap_or(&db_path).to_path_buf();
         let encryption = EncryptionService::new(data_dir).map_err(|e| e.to_string())?;
-        *self.encryption.lock().unwrap() = Some(encryption);
+
+        let mut enc_guard = self
+            .encryption
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *enc_guard = Some(encryption);
 
         Ok(())
     }
@@ -39,9 +51,37 @@ fn with_db<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
 where
     F: FnOnce(&Database) -> DbResult<T>,
 {
-    let guard = state.db.lock().unwrap();
+    // Recover from poison if a previous thread panicked while holding the lock
+    let guard = state
+        .db
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = guard.as_ref().ok_or("Database not initialized")?;
     f(db).map_err(|e| e.to_string())
+}
+
+fn with_encryption<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
+where
+    F: FnOnce(&EncryptionService) -> Result<T, String>,
+{
+    let guard = state
+        .encryption
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let encryption = guard.as_ref().ok_or("Encryption not initialized")?;
+    f(encryption)
+}
+
+fn with_encryption_mut<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
+where
+    F: FnOnce(&mut EncryptionService) -> Result<T, String>,
+{
+    let mut guard = state
+        .encryption
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
+    f(encryption)
 }
 
 // Initialization
@@ -69,7 +109,10 @@ pub fn get_transaction_count(state: State<AppState>) -> Result<i32, String> {
 
 // Account Commands
 #[tauri::command]
-pub fn create_account(state: State<AppState>, request: CreateAccountRequest) -> Result<Account, String> {
+pub fn create_account(
+    state: State<AppState>,
+    request: CreateAccountRequest,
+) -> Result<Account, String> {
     with_db(&state, |db| {
         let mut account = Account::new(request.name, request.account_type);
 
@@ -104,7 +147,10 @@ pub fn get_account(state: State<AppState>, id: String) -> Result<Account, String
 }
 
 #[tauri::command]
-pub fn update_account(state: State<AppState>, request: UpdateAccountRequest) -> Result<Account, String> {
+pub fn update_account(
+    state: State<AppState>,
+    request: UpdateAccountRequest,
+) -> Result<Account, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
             let mut account = repository::get_account(conn, &request.id)?;
@@ -146,7 +192,10 @@ pub fn delete_account(state: State<AppState>, id: String) -> Result<(), String> 
 
 // Transaction Commands
 #[tauri::command]
-pub fn create_transaction(state: State<AppState>, request: CreateTransactionRequest) -> Result<Transaction, String> {
+pub fn create_transaction(
+    state: State<AppState>,
+    request: CreateTransactionRequest,
+) -> Result<Transaction, String> {
     with_db(&state, |db| {
         let mut tx = Transaction::new(
             request.account_id,
@@ -170,7 +219,10 @@ pub fn create_transaction(state: State<AppState>, request: CreateTransactionRequ
 }
 
 #[tauri::command]
-pub fn get_transactions(state: State<AppState>, filter: TransactionFilter) -> Result<Vec<Transaction>, String> {
+pub fn get_transactions(
+    state: State<AppState>,
+    filter: TransactionFilter,
+) -> Result<Vec<Transaction>, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| repository::get_transactions(conn, &filter))
     })
@@ -184,7 +236,10 @@ pub fn get_transaction(state: State<AppState>, id: String) -> Result<Transaction
 }
 
 #[tauri::command]
-pub fn update_transaction(state: State<AppState>, request: UpdateTransactionRequest) -> Result<Transaction, String> {
+pub fn update_transaction(
+    state: State<AppState>,
+    request: UpdateTransactionRequest,
+) -> Result<Transaction, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
             let mut tx = repository::get_transaction(conn, &request.id)?;
@@ -239,7 +294,10 @@ pub fn get_categories(state: State<AppState>) -> Result<Vec<Category>, String> {
 }
 
 #[tauri::command]
-pub fn create_category(state: State<AppState>, request: CreateCategoryRequest) -> Result<Category, String> {
+pub fn create_category(
+    state: State<AppState>,
+    request: CreateCategoryRequest,
+) -> Result<Category, String> {
     with_db(&state, |db| {
         let mut category = Category::new(request.name, request.category_type, request.color);
         category.icon = request.icon;
@@ -252,9 +310,57 @@ pub fn create_category(state: State<AppState>, request: CreateCategoryRequest) -
     })
 }
 
+#[tauri::command]
+pub fn get_category(state: State<AppState>, id: String) -> Result<Category, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_category(conn, &id))
+    })
+}
+
+#[tauri::command]
+pub fn update_category(
+    state: State<AppState>,
+    request: UpdateCategoryRequest,
+) -> Result<Category, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let mut category = repository::get_category(conn, &request.id)?;
+
+            if let Some(name) = request.name {
+                category.name = name;
+            }
+            if let Some(category_type) = request.category_type {
+                category.category_type = category_type;
+            }
+            if let Some(color) = request.color {
+                category.color = color;
+            }
+            if let Some(icon) = request.icon {
+                category.icon = Some(icon);
+            }
+            if let Some(parent_id) = request.parent_id {
+                category.parent_id = Some(parent_id);
+            }
+
+            repository::update_category(conn, &category)?;
+            Ok(category)
+        })
+    })
+}
+
+#[tauri::command]
+pub fn delete_category(state: State<AppState>, id: String) -> Result<(), String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::delete_category(conn, &id))
+    })
+}
+
 // Budget Commands
 #[tauri::command]
-pub fn create_budget(state: State<AppState>, request: CreateBudgetRequest) -> Result<Budget, String> {
+pub fn create_budget(
+    state: State<AppState>,
+    request: CreateBudgetRequest,
+) -> Result<Budget, String> {
     with_db(&state, |db| {
         let mut budget = Budget::new(
             request.name,
@@ -282,28 +388,87 @@ pub fn get_budgets(state: State<AppState>) -> Result<Vec<Budget>, String> {
 }
 
 #[tauri::command]
-pub fn get_budget_status(state: State<AppState>, as_of_date: Option<NaiveDate>) -> Result<Vec<BudgetStatus>, String> {
+pub fn get_budget(state: State<AppState>, id: String) -> Result<Budget, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_budget(conn, &id))
+    })
+}
+
+#[tauri::command]
+pub fn update_budget(
+    state: State<AppState>,
+    request: UpdateBudgetRequest,
+) -> Result<Budget, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let mut budget = repository::get_budget(conn, &request.id)?;
+
+            if let Some(name) = request.name {
+                budget.name = name;
+            }
+            if let Some(category_id) = request.category_id {
+                budget.category_id = category_id;
+            }
+            if let Some(amount) = request.amount {
+                budget.amount = amount;
+            }
+            if let Some(period) = request.period {
+                budget.period = period;
+            }
+            if let Some(start_date) = request.start_date {
+                budget.start_date = start_date;
+            }
+            if let Some(end_date) = request.end_date {
+                budget.end_date = Some(end_date);
+            }
+            if let Some(rollover) = request.rollover {
+                budget.rollover = rollover;
+            }
+
+            repository::update_budget(conn, &budget)?;
+            Ok(budget)
+        })
+    })
+}
+
+#[tauri::command]
+pub fn delete_budget(state: State<AppState>, id: String) -> Result<(), String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::delete_budget(conn, &id))
+    })
+}
+
+#[tauri::command]
+pub fn get_budget_status(
+    state: State<AppState>,
+    as_of_date: Option<NaiveDate>,
+) -> Result<Vec<BudgetStatus>, String> {
     let date = as_of_date.unwrap_or_else(|| chrono::Utc::now().date_naive());
 
     with_db(&state, |db| {
         db.with_connection(|conn| {
             let budgets = repository::get_all_budgets(conn)?;
             let categories = repository::get_all_categories(conn)?;
-            let transactions = repository::get_transactions(conn, &TransactionFilter {
-                account_ids: None,
-                category_ids: None,
-                transaction_types: None,
-                start_date: None,
-                end_date: None,
-                min_amount: None,
-                max_amount: None,
-                search_text: None,
-                status: None,
-            })?;
+            let transactions = repository::get_transactions(
+                conn,
+                &TransactionFilter {
+                    account_ids: None,
+                    category_ids: None,
+                    transaction_types: None,
+                    start_date: None,
+                    end_date: None,
+                    min_amount: None,
+                    max_amount: None,
+                    search_text: None,
+                    status: None,
+                },
+            )?;
 
             let statuses: Vec<BudgetStatus> = budgets
                 .iter()
-                .map(|b| services::reports::calculate_budget_status(b, &transactions, &categories, date))
+                .map(|b| {
+                    services::reports::calculate_budget_status(b, &transactions, &categories, date)
+                })
                 .collect();
 
             Ok(statuses)
@@ -313,7 +478,10 @@ pub fn get_budget_status(state: State<AppState>, as_of_date: Option<NaiveDate>) 
 
 // Recurring Transaction Commands
 #[tauri::command]
-pub fn create_recurring(state: State<AppState>, request: CreateRecurringRequest) -> Result<RecurringTransaction, String> {
+pub fn create_recurring(
+    state: State<AppState>,
+    request: CreateRecurringRequest,
+) -> Result<RecurringTransaction, String> {
     with_db(&state, |db| {
         let mut recurring = RecurringTransaction::new(
             request.account_id,
@@ -346,7 +514,10 @@ pub fn get_recurring(state: State<AppState>) -> Result<Vec<RecurringTransaction>
 }
 
 #[tauri::command]
-pub fn get_upcoming_recurring(state: State<AppState>, days: Option<i32>) -> Result<Vec<UpcomingRecurring>, String> {
+pub fn get_upcoming_recurring(
+    state: State<AppState>,
+    days: Option<i32>,
+) -> Result<Vec<UpcomingRecurring>, String> {
     let days = days.unwrap_or(30);
     let today = chrono::Utc::now().date_naive();
     let end_date = today + chrono::Duration::days(days as i64);
@@ -367,7 +538,10 @@ pub fn get_upcoming_recurring(state: State<AppState>, days: Option<i32>) -> Resu
                 .filter(|r| r.next_occurrence <= end_date)
                 .map(|r| {
                     let days_until = (r.next_occurrence - today).num_days();
-                    let category_name = r.category_id.as_ref().and_then(|id| category_map.get(id).cloned());
+                    let category_name = r
+                        .category_id
+                        .as_ref()
+                        .and_then(|id| category_map.get(id).cloned());
                     let account_name = account_map.get(&r.account_id).cloned().unwrap_or_default();
 
                     UpcomingRecurring {
@@ -387,14 +561,17 @@ pub fn get_upcoming_recurring(state: State<AppState>, days: Option<i32>) -> Resu
 }
 
 #[tauri::command]
-pub fn detect_recurring_patterns(state: State<AppState>) -> Result<Vec<services::recurring_detector::DetectedRecurring>, String> {
+pub fn detect_recurring_patterns(
+    state: State<AppState>,
+) -> Result<Vec<services::recurring_detector::DetectedRecurring>, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
             // Get all transactions
             let transactions = repository::get_transactions(conn, &TransactionFilter::default())?;
 
             // Detect recurring patterns
-            let mut detected = services::recurring_detector::detect_recurring_transactions(&transactions);
+            let mut detected =
+                services::recurring_detector::detect_recurring_transactions(&transactions);
 
             // Get category rules and enhance patterns with suggestions
             let rules = repository::get_category_rules(conn)?;
@@ -425,25 +602,31 @@ pub fn create_recurring_from_detected(
                     chrono::NaiveDate::from_ymd_opt(today.year() + 1, 1, day.min(28))
                 } else {
                     chrono::NaiveDate::from_ymd_opt(today.year(), today.month() + 1, day.min(28))
-                }.unwrap_or(today)
+                }
+                .unwrap_or(today)
             }
         } else if let Some(&last_date) = detected.occurrence_dates.last() {
             // Calculate based on frequency from last occurrence
             match detected.frequency {
                 RecurrenceFrequency::Weekly => last_date + chrono::Duration::days(7),
                 RecurrenceFrequency::Biweekly => last_date + chrono::Duration::days(14),
-                RecurrenceFrequency::Monthly => {
-                    if last_date.month() == 12 {
-                        chrono::NaiveDate::from_ymd_opt(last_date.year() + 1, 1, last_date.day())
-                    } else {
-                        chrono::NaiveDate::from_ymd_opt(last_date.year(), last_date.month() + 1, last_date.day())
-                    }.unwrap_or(last_date + chrono::Duration::days(30))
-                },
+                RecurrenceFrequency::Monthly => if last_date.month() == 12 {
+                    chrono::NaiveDate::from_ymd_opt(last_date.year() + 1, 1, last_date.day())
+                } else {
+                    chrono::NaiveDate::from_ymd_opt(
+                        last_date.year(),
+                        last_date.month() + 1,
+                        last_date.day(),
+                    )
+                }
+                .unwrap_or(last_date + chrono::Duration::days(30)),
                 RecurrenceFrequency::Quarterly => last_date + chrono::Duration::days(91),
-                RecurrenceFrequency::Yearly => {
-                    chrono::NaiveDate::from_ymd_opt(last_date.year() + 1, last_date.month(), last_date.day())
-                        .unwrap_or(last_date + chrono::Duration::days(365))
-                },
+                RecurrenceFrequency::Yearly => chrono::NaiveDate::from_ymd_opt(
+                    last_date.year() + 1,
+                    last_date.month(),
+                    last_date.day(),
+                )
+                .unwrap_or(last_date + chrono::Duration::days(365)),
                 _ => last_date + chrono::Duration::days(30),
             }
         } else {
@@ -499,7 +682,9 @@ pub fn deactivate_recurring(
 }
 
 #[tauri::command]
-pub fn get_cancelled_subscriptions(state: State<AppState>) -> Result<Vec<CancelledSubscription>, String> {
+pub fn get_cancelled_subscriptions(
+    state: State<AppState>,
+) -> Result<Vec<CancelledSubscription>, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| repository::get_cancelled_subscriptions(conn))
     })
@@ -511,9 +696,7 @@ pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, Str
         db.with_connection(|conn| {
             let cancelled = repository::get_cancelled_subscriptions(conn)?;
 
-            let total_yearly: Decimal = cancelled.iter()
-                .map(|c| c.estimated_yearly_savings)
-                .sum();
+            let total_yearly: Decimal = cancelled.iter().map(|c| c.estimated_yearly_savings).sum();
 
             let total_monthly = total_yearly / Decimal::from(12);
 
@@ -527,9 +710,77 @@ pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, Str
     })
 }
 
+#[tauri::command]
+pub fn get_recurring_by_id(
+    state: State<AppState>,
+    id: String,
+) -> Result<RecurringTransaction, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_recurring_by_id(conn, &id))
+    })
+}
+
+#[tauri::command]
+pub fn update_recurring(
+    state: State<AppState>,
+    request: UpdateRecurringRequest,
+) -> Result<RecurringTransaction, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let mut recurring = repository::get_recurring_by_id(conn, &request.id)?;
+
+            if let Some(account_id) = request.account_id {
+                recurring.account_id = account_id;
+            }
+            if let Some(transaction_type) = request.transaction_type {
+                recurring.transaction_type = transaction_type;
+            }
+            if let Some(amount) = request.amount {
+                recurring.amount = amount;
+            }
+            if let Some(description) = request.description {
+                recurring.description = description;
+            }
+            if let Some(category_id) = request.category_id {
+                recurring.category_id = Some(category_id);
+            }
+            if let Some(payee) = request.payee {
+                recurring.payee = Some(payee);
+            }
+            if let Some(frequency) = request.frequency {
+                recurring.frequency = frequency;
+            }
+            if let Some(start_date) = request.start_date {
+                recurring.start_date = start_date;
+            }
+            if let Some(end_date) = request.end_date {
+                recurring.end_date = Some(end_date);
+            }
+            if let Some(next_occurrence) = request.next_occurrence {
+                recurring.next_occurrence = next_occurrence;
+            }
+            if let Some(day_of_month) = request.day_of_month {
+                recurring.day_of_month = Some(day_of_month);
+            }
+            if let Some(auto_post) = request.auto_post {
+                recurring.auto_post = auto_post;
+            }
+            if let Some(reminder_days) = request.reminder_days {
+                recurring.reminder_days = Some(reminder_days);
+            }
+
+            repository::update_recurring(conn, &recurring)?;
+            Ok(recurring)
+        })
+    })
+}
+
 // Goals Commands
 #[tauri::command]
-pub fn create_goal(state: State<AppState>, request: CreateGoalRequest) -> Result<SavingsGoal, String> {
+pub fn create_goal(
+    state: State<AppState>,
+    request: CreateGoalRequest,
+) -> Result<SavingsGoal, String> {
     with_db(&state, |db| {
         let mut goal = SavingsGoal::new(request.name, request.goal_type, request.target_amount);
 
@@ -559,9 +810,73 @@ pub fn get_goals(state: State<AppState>) -> Result<Vec<SavingsGoal>, String> {
 }
 
 #[tauri::command]
-pub fn update_goal_progress(state: State<AppState>, id: String, amount: Decimal) -> Result<(), String> {
+pub fn get_goal(state: State<AppState>, id: String) -> Result<SavingsGoal, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_goal(conn, &id))
+    })
+}
+
+#[tauri::command]
+pub fn update_goal_progress(
+    state: State<AppState>,
+    id: String,
+    amount: Decimal,
+) -> Result<(), String> {
     with_db(&state, |db| {
         db.with_connection(|conn| repository::update_goal_amount(conn, &id, amount))
+    })
+}
+
+#[tauri::command]
+pub fn update_goal(
+    state: State<AppState>,
+    request: UpdateGoalRequest,
+) -> Result<SavingsGoal, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            let mut goal = repository::get_goal(conn, &request.id)?;
+
+            if let Some(name) = request.name {
+                goal.name = name;
+            }
+            if let Some(goal_type) = request.goal_type {
+                goal.goal_type = goal_type;
+            }
+            if let Some(target_amount) = request.target_amount {
+                goal.target_amount = target_amount;
+            }
+            if let Some(current_amount) = request.current_amount {
+                goal.current_amount = current_amount;
+            }
+            if let Some(target_date) = request.target_date {
+                goal.target_date = Some(target_date);
+            }
+            if let Some(account_id) = request.account_id {
+                goal.account_id = Some(account_id);
+            }
+            if let Some(color) = request.color {
+                goal.color = color;
+            }
+            if let Some(icon) = request.icon {
+                goal.icon = Some(icon);
+            }
+            if let Some(notes) = request.notes {
+                goal.notes = Some(notes);
+            }
+            if let Some(status) = request.status {
+                goal.status = status;
+            }
+
+            repository::update_goal(conn, &goal)?;
+            Ok(goal)
+        })
+    })
+}
+
+#[tauri::command]
+pub fn delete_goal(state: State<AppState>, id: String) -> Result<(), String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::delete_goal(conn, &id))
     })
 }
 
@@ -576,7 +891,11 @@ pub fn detect_import_columns(path: String) -> Result<Vec<String>, String> {
         "excel" => {
             // For Excel, we'd need to read the first row as headers
             // For now, return empty to let preview handle it
-            Ok(vec!["Date".to_string(), "Description".to_string(), "Amount".to_string()])
+            Ok(vec![
+                "Date".to_string(),
+                "Description".to_string(),
+                "Amount".to_string(),
+            ])
         }
         "ofx" | "qif" => {
             // OFX and QIF have fixed field structures - no column mapping needed
@@ -588,7 +907,10 @@ pub fn detect_import_columns(path: String) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn preview_import(path: String, mapping: importer::ImportMapping) -> Result<Vec<importer::RawTransaction>, String> {
+pub fn preview_import(
+    path: String,
+    mapping: importer::ImportMapping,
+) -> Result<Vec<importer::RawTransaction>, String> {
     let path = PathBuf::from(&path);
     importer::preview_import(&path, &mapping).map_err(|e| e.to_string())
 }
@@ -670,30 +992,42 @@ pub fn get_spending_by_category(
             let transactions = repository::get_transactions(conn, &filter)?;
             let categories = repository::get_all_categories(conn)?;
 
-            Ok(services::reports::calculate_spending_by_category(&transactions, &categories))
+            Ok(services::reports::calculate_spending_by_category(
+                &transactions,
+                &categories,
+            ))
         })
     })
 }
 
 #[tauri::command]
-pub fn get_monthly_trends(state: State<AppState>, months: Option<usize>) -> Result<Vec<services::reports::MonthlyTrend>, String> {
+pub fn get_monthly_trends(
+    state: State<AppState>,
+    months: Option<usize>,
+) -> Result<Vec<services::reports::MonthlyTrend>, String> {
     let months = months.unwrap_or(12);
 
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let transactions = repository::get_transactions(conn, &TransactionFilter {
-                account_ids: None,
-                category_ids: None,
-                transaction_types: None,
-                start_date: None,
-                end_date: None,
-                min_amount: None,
-                max_amount: None,
-                search_text: None,
-                status: None,
-            })?;
+            let transactions = repository::get_transactions(
+                conn,
+                &TransactionFilter {
+                    account_ids: None,
+                    category_ids: None,
+                    transaction_types: None,
+                    start_date: None,
+                    end_date: None,
+                    min_amount: None,
+                    max_amount: None,
+                    search_text: None,
+                    status: None,
+                },
+            )?;
 
-            Ok(services::reports::calculate_monthly_trends(&transactions, months))
+            Ok(services::reports::calculate_monthly_trends(
+                &transactions,
+                months,
+            ))
         })
     })
 }
@@ -706,17 +1040,20 @@ pub fn get_cash_flow_report(
 ) -> Result<services::reports::CashFlowReport, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let transactions = repository::get_transactions(conn, &TransactionFilter {
-                account_ids: None,
-                category_ids: None,
-                transaction_types: None,
-                start_date: Some(start_date),
-                end_date: Some(end_date),
-                min_amount: None,
-                max_amount: None,
-                search_text: None,
-                status: None,
-            })?;
+            let transactions = repository::get_transactions(
+                conn,
+                &TransactionFilter {
+                    account_ids: None,
+                    category_ids: None,
+                    transaction_types: None,
+                    start_date: Some(start_date),
+                    end_date: Some(end_date),
+                    min_amount: None,
+                    max_amount: None,
+                    search_text: None,
+                    status: None,
+                },
+            )?;
 
             let categories = repository::get_all_categories(conn)?;
             let accounts = repository::get_all_accounts(conn)?;
@@ -799,7 +1136,10 @@ pub fn get_calendar_events(
                             category_name: category.map(|c| c.name.clone()),
                             category_color: category.map(|c| c.color.clone()),
                             is_recurring: true,
-                            account_name: account_map.get(&r.account_id).cloned().unwrap_or_default(),
+                            account_name: account_map
+                                .get(&r.account_id)
+                                .cloned()
+                                .unwrap_or_default(),
                         });
                     }
 
@@ -818,19 +1158,17 @@ pub fn get_calendar_events(
 
 // Auto-Categorize Command
 #[tauri::command]
-pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCategorizeResult, String> {
+pub fn auto_categorize_transactions(
+    state: State<AppState>,
+) -> Result<AutoCategorizeResult, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
             // Get all existing categories first - only use valid category IDs
             let categories = repository::get_all_categories(conn)?;
-            let valid_category_ids: std::collections::HashSet<String> = categories
-                .iter()
-                .map(|c| c.id.clone())
-                .collect();
-            let category_map: std::collections::HashMap<String, String> = categories
-                .into_iter()
-                .map(|c| (c.id, c.name))
-                .collect();
+            let valid_category_ids: std::collections::HashSet<String> =
+                categories.iter().map(|c| c.id.clone()).collect();
+            let category_map: std::collections::HashMap<String, String> =
+                categories.into_iter().map(|c| (c.id, c.name)).collect();
 
             // Get all rules (user-defined + default)
             let user_rules = repository::get_category_rules(conn)?;
@@ -844,7 +1182,7 @@ pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCatego
             all_rules.extend(
                 services::categorizer::get_default_rules()
                     .into_iter()
-                    .filter(|r| valid_category_ids.contains(&r.category_id))
+                    .filter(|r| valid_category_ids.contains(&r.category_id)),
             );
 
             let categorizer = Categorizer::new(all_rules);
@@ -854,7 +1192,8 @@ pub fn auto_categorize_transactions(state: State<AppState>) -> Result<AutoCatego
             let transactions = repository::get_transactions(conn, &filter)?;
 
             let mut categorized_count = 0;
-            let mut category_breakdown: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut category_breakdown: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
 
             for tx in &transactions {
                 if tx.category_id.is_none() {
@@ -936,7 +1275,9 @@ pub fn batch_categorize_transactions(
 
                 // Check if description or payee matches the keyword
                 let description_matches = tx.description.to_lowercase().contains(&keyword_lower);
-                let payee_matches = tx.payee.as_ref()
+                let payee_matches = tx
+                    .payee
+                    .as_ref()
                     .map_or(false, |p| p.to_lowercase().contains(&keyword_lower));
 
                 if description_matches || payee_matches {
@@ -975,9 +1316,18 @@ pub struct BatchCategorizeResult {
 
 // Category Rules Commands
 #[tauri::command]
-pub fn create_category_rule(state: State<AppState>, category_id: String, pattern: String, field: Option<String>) -> Result<CategoryRule, String> {
+pub fn create_category_rule(
+    state: State<AppState>,
+    category_id: String,
+    pattern: String,
+    field: Option<String>,
+) -> Result<CategoryRule, String> {
     with_db(&state, |db| {
-        let rule = CategoryRule::new(category_id, pattern, field.unwrap_or_else(|| "description".to_string()));
+        let rule = CategoryRule::new(
+            category_id,
+            pattern,
+            field.unwrap_or_else(|| "description".to_string()),
+        );
 
         db.with_connection(|conn| {
             repository::create_category_rule(conn, &rule)?;
@@ -1008,7 +1358,10 @@ pub fn get_user_category_rules(state: State<AppState>) -> Result<Vec<UserCategor
                     id: r.id,
                     pattern: r.pattern,
                     category_id: r.category_id.clone(),
-                    category_name: category_map.get(&r.category_id).cloned().unwrap_or_default(),
+                    category_name: category_map
+                        .get(&r.category_id)
+                        .cloned()
+                        .unwrap_or_default(),
                     created_at: r.created_at.to_rfc3339(),
                 })
                 .collect())
@@ -1034,7 +1387,10 @@ pub struct UserCategoryRule {
 
 // Notification Commands
 #[tauri::command]
-pub fn get_bill_reminders(state: State<AppState>, days_ahead: Option<i32>) -> Result<Vec<services::notifications::BillReminder>, String> {
+pub fn get_bill_reminders(
+    state: State<AppState>,
+    days_ahead: Option<i32>,
+) -> Result<Vec<services::notifications::BillReminder>, String> {
     let days = days_ahead.unwrap_or(7);
 
     with_db(&state, |db| {
@@ -1111,7 +1467,8 @@ pub fn check_and_send_notifications(
             let title = services::notifications::format_notification_title(reminder);
             let body = services::notifications::format_notification_body(reminder, show_amount);
 
-            if app.notification()
+            if app
+                .notification()
                 .builder()
                 .title(&title)
                 .body(&body)
@@ -1128,47 +1485,44 @@ pub fn check_and_send_notifications(
 
 // Encryption Commands
 #[tauri::command]
-pub fn get_encryption_status(state: State<AppState>) -> Result<services::encryption::EncryptionStatus, String> {
-    let guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_ref().ok_or("Encryption not initialized")?;
-
-    Ok(services::encryption::EncryptionStatus {
-        enabled: encryption.is_enabled(),
-        unlocked: encryption.is_unlocked(),
+pub fn get_encryption_status(
+    state: State<AppState>,
+) -> Result<services::encryption::EncryptionStatus, String> {
+    with_encryption(&state, |encryption| {
+        Ok(services::encryption::EncryptionStatus {
+            enabled: encryption.is_enabled(),
+            unlocked: encryption.is_unlocked(),
+        })
     })
 }
 
 #[tauri::command]
 pub fn enable_encryption(state: State<AppState>, password: String) -> Result<(), String> {
-    let mut guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
-
-    encryption.enable(&password).map_err(|e| e.to_string())
+    with_encryption_mut(&state, |encryption| {
+        encryption.enable(&password).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn disable_encryption(state: State<AppState>, password: String) -> Result<(), String> {
-    let mut guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
-
-    encryption.disable(&password).map_err(|e| e.to_string())
+    with_encryption_mut(&state, |encryption| {
+        encryption.disable(&password).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn unlock_encryption(state: State<AppState>, password: String) -> Result<(), String> {
-    let mut guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
-
-    encryption.unlock(&password).map_err(|e| e.to_string())
+    with_encryption_mut(&state, |encryption| {
+        encryption.unlock(&password).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn lock_encryption(state: State<AppState>) -> Result<(), String> {
-    let mut guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
-
-    encryption.lock();
-    Ok(())
+    with_encryption_mut(&state, |encryption| {
+        encryption.lock();
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -1177,15 +1531,19 @@ pub fn change_encryption_password(
     old_password: String,
     new_password: String,
 ) -> Result<(), String> {
-    let mut guard = state.encryption.lock().unwrap();
-    let encryption = guard.as_mut().ok_or("Encryption not initialized")?;
-
-    encryption.change_password(&old_password, &new_password).map_err(|e| e.to_string())
+    with_encryption_mut(&state, |encryption| {
+        encryption
+            .change_password(&old_password, &new_password)
+            .map_err(|e| e.to_string())
+    })
 }
 
 // Backup Commands
 #[tauri::command]
-pub fn export_backup(state: State<AppState>, path: String) -> Result<services::backup::BackupMetadata, String> {
+pub fn export_backup(
+    state: State<AppState>,
+    path: String,
+) -> Result<services::backup::BackupMetadata, String> {
     let path_buf = PathBuf::from(&path);
 
     with_db(&state, |db| {
@@ -1195,7 +1553,10 @@ pub fn export_backup(state: State<AppState>, path: String) -> Result<services::b
 }
 
 #[tauri::command]
-pub fn import_backup(state: State<AppState>, path: String) -> Result<services::backup::BackupMetadata, String> {
+pub fn import_backup(
+    state: State<AppState>,
+    path: String,
+) -> Result<services::backup::BackupMetadata, String> {
     let path_buf = PathBuf::from(&path);
 
     with_db(&state, |db| {

@@ -110,10 +110,7 @@ pub fn calculate_spending_by_category(
     result
 }
 
-pub fn calculate_monthly_trends(
-    transactions: &[Transaction],
-    months: usize,
-) -> Vec<MonthlyTrend> {
+pub fn calculate_monthly_trends(transactions: &[Transaction], months: usize) -> Vec<MonthlyTrend> {
     let mut monthly: HashMap<(i32, u32), (Decimal, Decimal)> = HashMap::new();
 
     for tx in transactions {
@@ -226,7 +223,9 @@ pub fn calculate_cash_flow(
 
     let mut daily_map: HashMap<NaiveDate, (Decimal, Decimal)> = HashMap::new();
     for tx in &filtered {
-        let entry = daily_map.entry(tx.date).or_insert((Decimal::ZERO, Decimal::ZERO));
+        let entry = daily_map
+            .entry(tx.date)
+            .or_insert((Decimal::ZERO, Decimal::ZERO));
         match tx.transaction_type {
             TransactionType::Income => entry.0 += tx.amount,
             TransactionType::Expense => entry.1 += tx.amount,
@@ -239,7 +238,10 @@ pub fn calculate_cash_flow(
     let mut current = start_date;
 
     while current <= end_date {
-        let (income, expenses) = daily_map.get(&current).copied().unwrap_or((Decimal::ZERO, Decimal::ZERO));
+        let (income, expenses) = daily_map
+            .get(&current)
+            .copied()
+            .unwrap_or((Decimal::ZERO, Decimal::ZERO));
         running_balance = running_balance + income - expenses;
 
         daily_balances.push(DailyBalance {
@@ -296,8 +298,12 @@ pub fn calculate_budget_status(
 
     BudgetStatus {
         budget: budget.clone(),
-        category_name: category.map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".to_string()),
-        category_color: category.map(|c| c.color.clone()).unwrap_or_else(|| "#6b7280".to_string()),
+        category_name: category
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        category_color: category
+            .map(|c| c.color.clone())
+            .unwrap_or_else(|| "#6b7280".to_string()),
         spent,
         remaining,
         percentage_used,
@@ -323,29 +329,37 @@ fn get_budget_period_dates(budget: &Budget, as_of_date: NaiveDate) -> (NaiveDate
             (start, end)
         }
         BudgetPeriod::Monthly => {
-            let start = NaiveDate::from_ymd_opt(as_of_date.year(), as_of_date.month(), 1).unwrap();
+            // First day of current month - always valid for valid as_of_date
+            let start = NaiveDate::from_ymd_opt(as_of_date.year(), as_of_date.month(), 1)
+                .unwrap_or(as_of_date);
+            // Last day of current month: go to first of next month, subtract 1 day
             let end = if as_of_date.month() == 12 {
-                NaiveDate::from_ymd_opt(as_of_date.year() + 1, 1, 1).unwrap()
+                NaiveDate::from_ymd_opt(as_of_date.year() + 1, 1, 1)
             } else {
-                NaiveDate::from_ymd_opt(as_of_date.year(), as_of_date.month() + 1, 1).unwrap()
-            } - chrono::Duration::days(1);
+                NaiveDate::from_ymd_opt(as_of_date.year(), as_of_date.month() + 1, 1)
+            }
+            .map(|d| d - chrono::Duration::days(1))
+            .unwrap_or(as_of_date);
             (start, end)
         }
         BudgetPeriod::Quarterly => {
             let quarter = (as_of_date.month() - 1) / 3;
             let start_month = quarter * 3 + 1;
-            let start = NaiveDate::from_ymd_opt(as_of_date.year(), start_month, 1).unwrap();
+            let start =
+                NaiveDate::from_ymd_opt(as_of_date.year(), start_month, 1).unwrap_or(as_of_date);
             let end_month = start_month + 2;
             let end = if end_month == 12 {
-                NaiveDate::from_ymd_opt(as_of_date.year() + 1, 1, 1).unwrap()
+                NaiveDate::from_ymd_opt(as_of_date.year() + 1, 1, 1)
             } else {
-                NaiveDate::from_ymd_opt(as_of_date.year(), end_month + 1, 1).unwrap()
-            } - chrono::Duration::days(1);
+                NaiveDate::from_ymd_opt(as_of_date.year(), end_month + 1, 1)
+            }
+            .map(|d| d - chrono::Duration::days(1))
+            .unwrap_or(as_of_date);
             (start, end)
         }
         BudgetPeriod::Yearly => {
-            let start = NaiveDate::from_ymd_opt(as_of_date.year(), 1, 1).unwrap();
-            let end = NaiveDate::from_ymd_opt(as_of_date.year(), 12, 31).unwrap();
+            let start = NaiveDate::from_ymd_opt(as_of_date.year(), 1, 1).unwrap_or(as_of_date);
+            let end = NaiveDate::from_ymd_opt(as_of_date.year(), 12, 31).unwrap_or(as_of_date);
             (start, end)
         }
     }

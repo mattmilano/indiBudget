@@ -51,61 +51,46 @@ pub struct BackupData {
 }
 
 pub fn create_backup(db: &Database) -> Result<BackupData, BackupError> {
-    let result = db.with_connection(|conn| {
-        let accounts = repository::get_all_accounts(conn)?;
-        let transactions = repository::get_transactions(
-            conn,
-            &crate::models::TransactionFilter::default(),
-        )?;
-        let categories = repository::get_all_categories(conn)?;
-        let budgets = repository::get_all_budgets(conn)?;
-        let recurring = repository::get_all_recurring(conn)?;
-        let goals = repository::get_all_goals(conn)?;
-        let category_rules = repository::get_category_rules(conn)?;
+    let accounts = db.with_connection(|conn| repository::get_all_accounts(conn))?;
+    let transactions = db.with_connection(|conn| {
+        repository::get_transactions(conn, &crate::models::TransactionFilter::default())
+    })?;
+    let categories = db.with_connection(|conn| repository::get_all_categories(conn))?;
+    let budgets = db.with_connection(|conn| repository::get_all_budgets(conn))?;
+    let recurring = db.with_connection(|conn| repository::get_all_recurring(conn))?;
+    let goals = db.with_connection(|conn| repository::get_all_goals(conn))?;
+    let category_rules = db.with_connection(|conn| repository::get_category_rules(conn))?;
 
-        let metadata = BackupMetadata {
-            version: BACKUP_VERSION.to_string(),
-            created_at: Utc::now().to_rfc3339(),
-            app_version: env!("CARGO_PKG_VERSION").to_string(),
-            account_count: accounts.len(),
-            transaction_count: transactions.len(),
-            category_count: categories.len(),
-        };
+    let metadata = BackupMetadata {
+        version: BACKUP_VERSION.to_string(),
+        created_at: Utc::now().to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        account_count: accounts.len(),
+        transaction_count: transactions.len(),
+        category_count: categories.len(),
+    };
 
-        Ok(BackupData {
-            metadata,
-            accounts: accounts
-                .iter()
-                .map(|a| serde_json::to_value(a).unwrap())
-                .collect(),
-            transactions: transactions
-                .iter()
-                .map(|t| serde_json::to_value(t).unwrap())
-                .collect(),
-            categories: categories
-                .iter()
-                .map(|c| serde_json::to_value(c).unwrap())
-                .collect(),
-            budgets: budgets
-                .iter()
-                .map(|b| serde_json::to_value(b).unwrap())
-                .collect(),
-            recurring: recurring
-                .iter()
-                .map(|r| serde_json::to_value(r).unwrap())
-                .collect(),
-            goals: goals
-                .iter()
-                .map(|g| serde_json::to_value(g).unwrap())
-                .collect(),
-            category_rules: category_rules
-                .iter()
-                .map(|r| serde_json::to_value(r).unwrap())
-                .collect(),
-        })
-    });
+    // Serialize each collection, propagating any serialization errors
+    let accounts_json: Result<Vec<_>, _> = accounts.iter().map(serde_json::to_value).collect();
+    let transactions_json: Result<Vec<_>, _> =
+        transactions.iter().map(serde_json::to_value).collect();
+    let categories_json: Result<Vec<_>, _> = categories.iter().map(serde_json::to_value).collect();
+    let budgets_json: Result<Vec<_>, _> = budgets.iter().map(serde_json::to_value).collect();
+    let recurring_json: Result<Vec<_>, _> = recurring.iter().map(serde_json::to_value).collect();
+    let goals_json: Result<Vec<_>, _> = goals.iter().map(serde_json::to_value).collect();
+    let category_rules_json: Result<Vec<_>, _> =
+        category_rules.iter().map(serde_json::to_value).collect();
 
-    result.map_err(BackupError::from)
+    Ok(BackupData {
+        metadata,
+        accounts: accounts_json?,
+        transactions: transactions_json?,
+        categories: categories_json?,
+        budgets: budgets_json?,
+        recurring: recurring_json?,
+        goals: goals_json?,
+        category_rules: category_rules_json?,
+    })
 }
 
 pub fn export_backup_to_file(db: &Database, path: &Path) -> Result<BackupMetadata, BackupError> {

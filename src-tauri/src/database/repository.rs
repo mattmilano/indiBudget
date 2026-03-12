@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection, Row};
+use rust_decimal::Decimal;
 use std::str::FromStr;
 
 use super::{DatabaseError, DbResult};
@@ -61,8 +61,12 @@ fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
         recurring_id: row.get(12)?,
         transfer_account_id: row.get(13)?,
         imported_id: row.get(14)?,
-        created_at: created_at_str.map(|s| parse_datetime(&s)).unwrap_or_else(Utc::now),
-        updated_at: updated_at_str.map(|s| parse_datetime(&s)).unwrap_or_else(Utc::now),
+        created_at: created_at_str
+            .map(|s| parse_datetime(&s))
+            .unwrap_or_else(Utc::now),
+        updated_at: updated_at_str
+            .map(|s| parse_datetime(&s))
+            .unwrap_or_else(Utc::now),
     })
 }
 
@@ -177,7 +181,10 @@ pub fn get_all_accounts(conn: &Connection) -> DbResult<Vec<Account>> {
         "SELECT id, name, account_type, balance, currency, institution, account_number_last4, is_active, created_at, updated_at
          FROM accounts WHERE is_active = 1 ORDER BY name",
     )?;
-    let accounts = stmt.query_map([], account_from_row)?.filter_map(|r| r.ok()).collect();
+    let accounts = stmt
+        .query_map([], account_from_row)?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(accounts)
 }
 
@@ -201,7 +208,10 @@ pub fn update_account(conn: &Connection, account: &Account) -> DbResult<()> {
 }
 
 pub fn delete_account(conn: &Connection, id: &str) -> DbResult<()> {
-    conn.execute("UPDATE accounts SET is_active = 0, updated_at = ?1 WHERE id = ?2", params![Utc::now().to_rfc3339(), id])?;
+    conn.execute(
+        "UPDATE accounts SET is_active = 0, updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
     Ok(())
 }
 
@@ -245,7 +255,10 @@ pub fn get_transaction(conn: &Connection, id: &str) -> DbResult<Transaction> {
     .map_err(|_| DatabaseError::NotFound)
 }
 
-pub fn get_transactions(conn: &Connection, filter: &TransactionFilter) -> DbResult<Vec<Transaction>> {
+pub fn get_transactions(
+    conn: &Connection,
+    filter: &TransactionFilter,
+) -> DbResult<Vec<Transaction>> {
     // Fetch all transactions and filter in memory
     // This is simpler and avoids SQL parameter binding complexity
     let sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
@@ -289,7 +302,10 @@ pub fn get_transactions(conn: &Connection, filter: &TransactionFilter) -> DbResu
                 if let Some(ref search) = filter.search_text {
                     let search_lower = search.to_lowercase();
                     if !tx.description.to_lowercase().contains(&search_lower)
-                        && !tx.payee.as_ref().map_or(false, |p| p.to_lowercase().contains(&search_lower))
+                        && !tx
+                            .payee
+                            .as_ref()
+                            .map_or(false, |p| p.to_lowercase().contains(&search_lower))
                     {
                         continue;
                     }
@@ -353,7 +369,10 @@ pub fn get_all_categories(conn: &Connection) -> DbResult<Vec<Category>> {
         "SELECT id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at
          FROM categories WHERE is_active = 1 ORDER BY is_system DESC, name",
     )?;
-    let categories = stmt.query_map([], category_from_row)?.filter_map(|r| r.ok()).collect();
+    let categories = stmt
+        .query_map([], category_from_row)?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(categories)
 }
 
@@ -387,6 +406,32 @@ pub fn create_category(conn: &Connection, category: &Category) -> DbResult<()> {
     Ok(())
 }
 
+pub fn update_category(conn: &Connection, category: &Category) -> DbResult<()> {
+    conn.execute(
+        "UPDATE categories SET name = ?1, category_type = ?2, color = ?3, icon = ?4, parent_id = ?5, is_active = ?6, updated_at = ?7 WHERE id = ?8",
+        params![
+            category.name,
+            category.category_type.as_str(),
+            category.color,
+            category.icon,
+            category.parent_id,
+            category.is_active as i32,
+            Utc::now().to_rfc3339(),
+            category.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_category(conn: &Connection, id: &str) -> DbResult<()> {
+    // Soft delete by setting is_active to false
+    conn.execute(
+        "UPDATE categories SET is_active = 0, updated_at = ?1 WHERE id = ?2 AND is_system = 0",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
+}
+
 // Budget Repository
 pub fn create_budget(conn: &Connection, budget: &Budget) -> DbResult<()> {
     conn.execute(
@@ -414,8 +459,48 @@ pub fn get_all_budgets(conn: &Connection) -> DbResult<Vec<Budget>> {
         "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at
          FROM budgets WHERE is_active = 1 ORDER BY name",
     )?;
-    let budgets = stmt.query_map([], budget_from_row)?.filter_map(|r| r.ok()).collect();
+    let budgets = stmt
+        .query_map([], budget_from_row)?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(budgets)
+}
+
+pub fn get_budget(conn: &Connection, id: &str) -> DbResult<Budget> {
+    conn.query_row(
+        "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at
+         FROM budgets WHERE id = ?1",
+        [id],
+        budget_from_row,
+    )
+    .map_err(|_| DatabaseError::NotFound)
+}
+
+pub fn update_budget(conn: &Connection, budget: &Budget) -> DbResult<()> {
+    conn.execute(
+        "UPDATE budgets SET name = ?1, category_id = ?2, amount = ?3, period = ?4, start_date = ?5, end_date = ?6, rollover = ?7, is_active = ?8, updated_at = ?9 WHERE id = ?10",
+        params![
+            budget.name,
+            budget.category_id,
+            budget.amount.to_string(),
+            budget.period.as_str(),
+            budget.start_date.format("%Y-%m-%d").to_string(),
+            budget.end_date.map(|d| d.format("%Y-%m-%d").to_string()),
+            budget.rollover as i32,
+            budget.is_active as i32,
+            Utc::now().to_rfc3339(),
+            budget.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_budget(conn: &Connection, id: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE budgets SET is_active = 0, updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
 }
 
 // Recurring Transaction Repository
@@ -454,14 +539,25 @@ pub fn get_all_recurring(conn: &Connection) -> DbResult<Vec<RecurringTransaction
          next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at
          FROM recurring_transactions WHERE is_active = 1 ORDER BY next_occurrence",
     )?;
-    let recurring = stmt.query_map([], recurring_from_row)?.filter_map(|r| r.ok()).collect();
+    let recurring = stmt
+        .query_map([], recurring_from_row)?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(recurring)
 }
 
-pub fn update_recurring_next_occurrence(conn: &Connection, id: &str, next: NaiveDate) -> DbResult<()> {
+pub fn update_recurring_next_occurrence(
+    conn: &Connection,
+    id: &str,
+    next: NaiveDate,
+) -> DbResult<()> {
     conn.execute(
         "UPDATE recurring_transactions SET next_occurrence = ?1, updated_at = ?2 WHERE id = ?3",
-        params![next.format("%Y-%m-%d").to_string(), Utc::now().to_rfc3339(), id],
+        params![
+            next.format("%Y-%m-%d").to_string(),
+            Utc::now().to_rfc3339(),
+            id
+        ],
     )?;
     Ok(())
 }
@@ -485,7 +581,39 @@ pub fn deactivate_recurring(conn: &Connection, id: &str) -> DbResult<()> {
     Ok(())
 }
 
-pub fn create_cancelled_subscription(conn: &Connection, cancelled: &CancelledSubscription) -> DbResult<()> {
+pub fn update_recurring(conn: &Connection, recurring: &RecurringTransaction) -> DbResult<()> {
+    conn.execute(
+        "UPDATE recurring_transactions SET account_id = ?1, transaction_type = ?2, amount = ?3, description = ?4,
+         category_id = ?5, payee = ?6, frequency = ?7, start_date = ?8, end_date = ?9, next_occurrence = ?10,
+         day_of_month = ?11, day_of_week = ?12, auto_post = ?13, reminder_days = ?14, is_active = ?15, updated_at = ?16
+         WHERE id = ?17",
+        params![
+            recurring.account_id,
+            recurring.transaction_type.as_str(),
+            recurring.amount.to_string(),
+            recurring.description,
+            recurring.category_id,
+            recurring.payee,
+            recurring.frequency.as_str(),
+            recurring.start_date.format("%Y-%m-%d").to_string(),
+            recurring.end_date.map(|d| d.format("%Y-%m-%d").to_string()),
+            recurring.next_occurrence.format("%Y-%m-%d").to_string(),
+            recurring.day_of_month,
+            recurring.day_of_week,
+            recurring.auto_post as i32,
+            recurring.reminder_days,
+            recurring.is_active as i32,
+            Utc::now().to_rfc3339(),
+            recurring.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn create_cancelled_subscription(
+    conn: &Connection,
+    cancelled: &CancelledSubscription,
+) -> DbResult<()> {
     conn.execute(
         "INSERT INTO cancelled_subscriptions (id, recurring_id, description, amount, frequency, cancelled_at, reason, estimated_yearly_savings, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -557,7 +685,10 @@ pub fn get_all_goals(conn: &Connection) -> DbResult<Vec<SavingsGoal>> {
         "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at
          FROM savings_goals WHERE status IN ('active', 'paused') ORDER BY name",
     )?;
-    let goals = stmt.query_map([], goal_from_row)?.filter_map(|r| r.ok()).collect();
+    let goals = stmt
+        .query_map([], goal_from_row)?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(goals)
 }
 
@@ -565,6 +696,46 @@ pub fn update_goal_amount(conn: &Connection, id: &str, amount: Decimal) -> DbRes
     conn.execute(
         "UPDATE savings_goals SET current_amount = ?1, updated_at = ?2 WHERE id = ?3",
         params![amount.to_string(), Utc::now().to_rfc3339(), id],
+    )?;
+    Ok(())
+}
+
+pub fn get_goal(conn: &Connection, id: &str) -> DbResult<SavingsGoal> {
+    conn.query_row(
+        "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at
+         FROM savings_goals WHERE id = ?1",
+        [id],
+        goal_from_row,
+    )
+    .map_err(|_| DatabaseError::NotFound)
+}
+
+pub fn update_goal(conn: &Connection, goal: &SavingsGoal) -> DbResult<()> {
+    conn.execute(
+        "UPDATE savings_goals SET name = ?1, goal_type = ?2, target_amount = ?3, target_date = ?4, current_amount = ?5,
+         account_id = ?6, color = ?7, icon = ?8, notes = ?9, status = ?10, updated_at = ?11 WHERE id = ?12",
+        params![
+            goal.name,
+            goal.goal_type.as_str(),
+            goal.target_amount.to_string(),
+            goal.target_date.map(|d| d.format("%Y-%m-%d").to_string()),
+            goal.current_amount.to_string(),
+            goal.account_id,
+            goal.color,
+            goal.icon,
+            goal.notes,
+            goal.status.as_str(),
+            Utc::now().to_rfc3339(),
+            goal.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_goal(conn: &Connection, id: &str) -> DbResult<()> {
+    conn.execute(
+        "UPDATE savings_goals SET status = 'cancelled', updated_at = ?1 WHERE id = ?2",
+        params![Utc::now().to_rfc3339(), id],
     )?;
     Ok(())
 }
@@ -611,7 +782,11 @@ pub fn create_category_rule(conn: &Connection, rule: &CategoryRule) -> DbResult<
 
 /// Create a user-defined category rule with high priority (100)
 /// User rules take precedence over system default rules
-pub fn create_user_category_rule(conn: &Connection, pattern: &str, category_id: &str) -> DbResult<()> {
+pub fn create_user_category_rule(
+    conn: &Connection,
+    pattern: &str,
+    category_id: &str,
+) -> DbResult<()> {
     // Check if a similar rule already exists for this pattern and category
     let existing: i32 = conn.query_row(
         "SELECT COUNT(*) FROM category_rules WHERE LOWER(pattern) = LOWER(?1) AND category_id = ?2",
