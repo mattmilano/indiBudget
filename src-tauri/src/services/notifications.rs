@@ -54,7 +54,10 @@ pub fn get_bill_reminders(
         .map(|r| {
             let days_until = (r.next_occurrence - today).num_days();
             let account_name = accounts.get(&r.account_id).cloned().unwrap_or_default();
-            let category_name = r.category_id.as_ref().and_then(|id| categories.get(id).cloned());
+            let category_name = r
+                .category_id
+                .as_ref()
+                .and_then(|id| categories.get(id).cloned());
 
             BillReminder {
                 recurring_id: r.id.clone(),
@@ -79,7 +82,10 @@ pub fn format_notification_title(reminder: &BillReminder) -> String {
     } else if reminder.days_until == 1 {
         format!("{} Due Tomorrow", reminder.description)
     } else {
-        format!("{} Due in {} Days", reminder.description, reminder.days_until)
+        format!(
+            "{} Due in {} Days",
+            reminder.description, reminder.days_until
+        )
     }
 }
 
@@ -98,6 +104,10 @@ pub fn format_notification_body(reminder: &BillReminder, show_amount: bool) -> S
             reminder.due_date.format("%B %d, %Y")
         )
     } else {
-        format!("{} due on {}", type_str, reminder.due_date.format("%B %d, %Y"))
+        format!(
+            "{} due on {}",
+            type_str,
+            reminder.due_date.format("%B %d, %Y")
+        )
     }
 }

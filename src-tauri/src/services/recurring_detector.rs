@@ -65,7 +65,11 @@ pub fn detect_recurring_transactions(transactions: &[Transaction]) -> Vec<Detect
     }
 
     // Sort by confidence (highest first)
-    detected.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    detected.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     detected
 }
@@ -101,7 +105,7 @@ fn analyze_pattern(description: &str, transactions: &[&Transaction]) -> Option<D
     // Calculate intervals between consecutive transactions
     let mut intervals: Vec<i64> = Vec::new();
     for i in 1..transactions.len() {
-        let days = (transactions[i].date - transactions[i-1].date).num_days();
+        let days = (transactions[i].date - transactions[i - 1].date).num_days();
         intervals.push(days);
     }
 
@@ -110,9 +114,11 @@ fn analyze_pattern(description: &str, transactions: &[&Transaction]) -> Option<D
     let (frequency, expected_interval) = detect_frequency(avg_interval);
 
     // Calculate interval consistency (how close intervals are to expected)
-    let interval_variance: f64 = intervals.iter()
+    let interval_variance: f64 = intervals
+        .iter()
         .map(|&i| (i as f64 - expected_interval).powi(2))
-        .sum::<f64>() / intervals.len() as f64;
+        .sum::<f64>()
+        / intervals.len() as f64;
     let interval_stddev = interval_variance.sqrt();
 
     // If intervals are too inconsistent, skip
@@ -164,16 +170,21 @@ fn analyze_pattern(description: &str, transactions: &[&Transaction]) -> Option<D
     }
 
     // Get the most common transaction type
-    let transaction_type = transactions.first().map(|t| t.transaction_type.clone())
+    let transaction_type = transactions
+        .first()
+        .map(|t| t.transaction_type.clone())
         .unwrap_or(TransactionType::Expense);
 
     // Get account ID (use the most recent transaction's account)
-    let account_id = transactions.last().map(|t| t.account_id.clone())
+    let account_id = transactions
+        .last()
+        .map(|t| t.account_id.clone())
         .unwrap_or_default();
 
     // Get category if consistent
     let category_id = {
-        let categories: Vec<_> = transactions.iter()
+        let categories: Vec<_> = transactions
+            .iter()
             .filter_map(|t| t.category_id.as_ref())
             .collect();
         if !categories.is_empty() && categories.iter().all(|&c| c == categories[0]) {
@@ -184,8 +195,7 @@ fn analyze_pattern(description: &str, transactions: &[&Transaction]) -> Option<D
     };
 
     // Get payee from first transaction that has one
-    let payee = transactions.iter()
-        .find_map(|t| t.payee.clone());
+    let payee = transactions.iter().find_map(|t| t.payee.clone());
 
     Some(DetectedRecurring {
         description: description.to_string(),
@@ -216,11 +226,14 @@ fn detect_frequency(avg_interval: f64) -> (RecurrenceFrequency, f64) {
     ];
 
     // Find the closest match
-    frequencies.iter()
+    frequencies
+        .iter()
         .min_by(|(_, a), (_, b)| {
             let diff_a = (avg_interval - a).abs();
             let diff_b = (avg_interval - b).abs();
-            diff_a.partial_cmp(&diff_b).unwrap_or(std::cmp::Ordering::Equal)
+            diff_a
+                .partial_cmp(&diff_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
         .cloned()
         .unwrap_or((RecurrenceFrequency::Monthly, 30.0))
@@ -297,9 +310,21 @@ mod tests {
 
     #[test]
     fn test_detect_frequency() {
-        assert!(matches!(detect_frequency(7.0).0, RecurrenceFrequency::Weekly));
-        assert!(matches!(detect_frequency(14.0).0, RecurrenceFrequency::Biweekly));
-        assert!(matches!(detect_frequency(30.0).0, RecurrenceFrequency::Monthly));
-        assert!(matches!(detect_frequency(28.0).0, RecurrenceFrequency::Monthly));
+        assert!(matches!(
+            detect_frequency(7.0).0,
+            RecurrenceFrequency::Weekly
+        ));
+        assert!(matches!(
+            detect_frequency(14.0).0,
+            RecurrenceFrequency::Biweekly
+        ));
+        assert!(matches!(
+            detect_frequency(30.0).0,
+            RecurrenceFrequency::Monthly
+        ));
+        assert!(matches!(
+            detect_frequency(28.0).0,
+            RecurrenceFrequency::Monthly
+        ));
     }
 }

@@ -121,9 +121,13 @@ pub fn get_database_path() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
         if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
-            PathBuf::from(data_home).join("indibudget").join("indibudget.db")
+            PathBuf::from(data_home)
+                .join("indibudget")
+                .join("indibudget.db")
         } else if let Some(home) = std::env::var_os("HOME") {
-            PathBuf::from(home).join(".local/share/indibudget").join("indibudget.db")
+            PathBuf::from(home)
+                .join(".local/share/indibudget")
+                .join("indibudget.db")
         } else {
             PathBuf::from("indibudget.db")
         }
@@ -143,7 +147,9 @@ pub fn get_database_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            PathBuf::from(appdata).join("indibudget").join("indibudget.db")
+            PathBuf::from(appdata)
+                .join("indibudget")
+                .join("indibudget.db")
         } else {
             PathBuf::from("indibudget.db")
         }

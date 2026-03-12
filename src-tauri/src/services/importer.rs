@@ -94,7 +94,10 @@ pub fn detect_file_format(path: &Path) -> Result<&'static str, ImportError> {
     }
 }
 
-pub fn import_csv(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
+pub fn import_csv(
+    path: &Path,
+    mapping: &ImportMapping,
+) -> Result<Vec<RawTransaction>, ImportError> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(mapping.has_header)
         .from_path(path)?;
@@ -178,7 +181,10 @@ pub fn import_csv(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransac
     Ok(transactions)
 }
 
-pub fn import_excel(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
+pub fn import_excel(
+    path: &Path,
+    mapping: &ImportMapping,
+) -> Result<Vec<RawTransaction>, ImportError> {
     let mut workbook: Xlsx<_> =
         open_workbook(path).map_err(|e: calamine::XlsxError| ImportError::Excel(e.to_string()))?;
 
@@ -222,14 +228,8 @@ pub fn import_excel(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTrans
             .copied()
             .unwrap_or(2);
 
-        let date = row
-            .get(date_idx)
-            .map(|c| c.to_string())
-            .unwrap_or_default();
-        let description = row
-            .get(desc_idx)
-            .map(|c| c.to_string())
-            .unwrap_or_default();
+        let date = row.get(date_idx).map(|c| c.to_string()).unwrap_or_default();
+        let description = row.get(desc_idx).map(|c| c.to_string()).unwrap_or_default();
         let amount = row
             .get(amount_idx)
             .map(|c| c.to_string().replace(['$', ',', ' '], ""))
@@ -287,14 +287,7 @@ pub fn parse_transaction(
 
 fn parse_date(date_str: &str, format: &str) -> Result<NaiveDate, ImportError> {
     let formats = vec![
-        format,
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-        "%m/%d/%y",
-        "%d/%m/%Y",
-        "%Y/%m/%d",
-        "%m-%d-%Y",
-        "%d-%m-%Y",
+        format, "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%d/%m/%Y", "%Y/%m/%d", "%m-%d-%Y", "%d-%m-%Y",
     ];
 
     for fmt in formats {
@@ -331,7 +324,10 @@ fn generate_import_id(date: &str, description: &str, amount: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
-pub fn preview_import(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
+pub fn preview_import(
+    path: &Path,
+    mapping: &ImportMapping,
+) -> Result<Vec<RawTransaction>, ImportError> {
     let format = detect_file_format(path)?;
 
     let raw_transactions = match format {
@@ -346,7 +342,10 @@ pub fn preview_import(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTra
 }
 
 /// Import transactions from any supported format
-pub fn import_file(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransaction>, ImportError> {
+pub fn import_file(
+    path: &Path,
+    mapping: &ImportMapping,
+) -> Result<Vec<RawTransaction>, ImportError> {
     let format = detect_file_format(path)?;
 
     match format {
@@ -359,7 +358,9 @@ pub fn import_file(path: &Path, mapping: &ImportMapping) -> Result<Vec<RawTransa
 }
 
 pub fn detect_csv_columns(path: &Path) -> Result<Vec<String>, ImportError> {
-    let mut reader = csv::ReaderBuilder::new().has_headers(true).from_path(path)?;
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path)?;
 
     let headers: Vec<String> = reader.headers()?.iter().map(String::from).collect();
 
@@ -467,7 +468,10 @@ fn parse_ofx_sgml(content: &str) -> Result<Vec<RawTransaction>, ImportError> {
 
             // Collect transaction data until we hit end of block
             let mut j = i + 1;
-            while j < lines.len() && !lines[j].contains("<STMTTRN>") && !lines[j].contains("</STMTTRN>") {
+            while j < lines.len()
+                && !lines[j].contains("<STMTTRN>")
+                && !lines[j].contains("</STMTTRN>")
+            {
                 let line = lines[j].trim();
 
                 if line.starts_with("<DTPOSTED>") {
@@ -633,7 +637,11 @@ fn parse_qif_date(date_str: &str) -> String {
         // Handle 2-digit years
         let year = if year.len() == 2 {
             let y: i32 = year.parse().unwrap_or(0);
-            if y > 50 { format!("19{}", year) } else { format!("20{}", year) }
+            if y > 50 {
+                format!("19{}", year)
+            } else {
+                format!("20{}", year)
+            }
         } else {
             year.to_string()
         };

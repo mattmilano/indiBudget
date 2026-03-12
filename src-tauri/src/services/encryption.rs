@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
 };
-use argon2::{Argon2, Algorithm, Params, Version};
+use argon2::{Algorithm, Argon2, Params, Version};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -120,13 +120,19 @@ impl EncryptionService {
             return Err(EncryptionError::NotEnabled);
         }
 
-        let salt = self.config.salt.as_ref()
+        let salt = self
+            .config
+            .salt
+            .as_ref()
             .ok_or(EncryptionError::InvalidPassword)?;
 
         let key = derive_key(password, salt)?;
 
         // Verify the password by decrypting the verification hash
-        let verification_hash = self.config.verification_hash.as_ref()
+        let verification_hash = self
+            .config
+            .verification_hash
+            .as_ref()
             .ok_or(EncryptionError::InvalidPassword)?;
 
         let decrypted = self.decrypt_bytes(verification_hash, &key)?;
@@ -144,7 +150,11 @@ impl EncryptionService {
         self.key = None;
     }
 
-    pub fn change_password(&mut self, old_password: &str, new_password: &str) -> Result<(), EncryptionError> {
+    pub fn change_password(
+        &mut self,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), EncryptionError> {
         // Verify old password
         self.unlock(old_password)?;
 
@@ -171,7 +181,9 @@ impl EncryptionService {
             return Ok(plaintext.to_string());
         }
 
-        let key = self.key.ok_or(EncryptionError::DecryptionFailed("Not unlocked".to_string()))?;
+        let key = self.key.ok_or(EncryptionError::DecryptionFailed(
+            "Not unlocked".to_string(),
+        ))?;
         let encrypted = self.encrypt_bytes(plaintext.as_bytes(), &key)?;
 
         // Return as base64
@@ -183,7 +195,9 @@ impl EncryptionService {
             return Ok(ciphertext.to_string());
         }
 
-        let key = self.key.ok_or(EncryptionError::DecryptionFailed("Not unlocked".to_string()))?;
+        let key = self.key.ok_or(EncryptionError::DecryptionFailed(
+            "Not unlocked".to_string(),
+        ))?;
         let encrypted = base64_decode(ciphertext)
             .map_err(|_| EncryptionError::DecryptionFailed("Invalid base64".to_string()))?;
 
@@ -193,14 +207,19 @@ impl EncryptionService {
             .map_err(|_| EncryptionError::DecryptionFailed("Invalid UTF-8".to_string()))
     }
 
-    fn encrypt_bytes(&self, plaintext: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>, EncryptionError> {
+    fn encrypt_bytes(
+        &self,
+        plaintext: &[u8],
+        key: &[u8; KEY_SIZE],
+    ) -> Result<Vec<u8>, EncryptionError> {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
 
         let mut rng = rand::thread_rng();
         let nonce_bytes: [u8; NONCE_SIZE] = rng.gen();
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext)
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext)
             .map_err(|e| EncryptionError::EncryptionFailed(e.to_string()))?;
 
         // Prepend nonce to ciphertext
@@ -210,9 +229,15 @@ impl EncryptionService {
         Ok(result)
     }
 
-    fn decrypt_bytes(&self, ciphertext: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>, EncryptionError> {
+    fn decrypt_bytes(
+        &self,
+        ciphertext: &[u8],
+        key: &[u8; KEY_SIZE],
+    ) -> Result<Vec<u8>, EncryptionError> {
         if ciphertext.len() < NONCE_SIZE {
-            return Err(EncryptionError::DecryptionFailed("Ciphertext too short".to_string()));
+            return Err(EncryptionError::DecryptionFailed(
+                "Ciphertext too short".to_string(),
+            ));
         }
 
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
@@ -220,7 +245,8 @@ impl EncryptionService {
         let nonce = Nonce::from_slice(&ciphertext[..NONCE_SIZE]);
         let ciphertext = &ciphertext[NONCE_SIZE..];
 
-        cipher.decrypt(nonce, ciphertext)
+        cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| EncryptionError::DecryptionFailed(e.to_string()))
     }
 
@@ -240,16 +266,18 @@ impl EncryptionService {
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE], EncryptionError> {
     let params = Params::new(
-        65536,  // 64 MB memory
-        3,      // 3 iterations
-        4,      // 4 parallel lanes
+        65536, // 64 MB memory
+        3,     // 3 iterations
+        4,     // 4 parallel lanes
         Some(KEY_SIZE),
-    ).map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
+    )
+    .map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
     let mut key = [0u8; KEY_SIZE];
-    argon2.hash_password_into(password.as_bytes(), salt, &mut key)
+    argon2
+        .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|e| EncryptionError::KeyDerivationFailed(e.to_string()))?;
 
     Ok(key)

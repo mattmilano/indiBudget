@@ -10,9 +10,11 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
     )?;
 
     let current_version: i32 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0),
+        )
         .unwrap_or(0);
 
     let migrations: Vec<(&str, i32)> = vec![
@@ -28,7 +30,10 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
     for (sql, version) in migrations {
         if version > current_version {
             conn.execute_batch(sql)?;
-            conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [version])?;
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?1)",
+                [version],
+            )?;
         }
     }
 
