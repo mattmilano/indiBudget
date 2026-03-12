@@ -1,6 +1,6 @@
 [package]
 name = "indibudget"
-version = "0.1.0"
+version = "1.0.0"
 description = "Personal budget application with calendar-focused expense tracking"
 authors = ["Matt Milano"]
 license = "MIT"
