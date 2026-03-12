@@ -329,9 +329,6 @@ pub fn update_category(
             if let Some(name) = request.name {
                 category.name = name;
             }
-            if let Some(category_type) = request.category_type {
-                category.category_type = category_type;
-            }
             if let Some(color) = request.color {
                 category.color = color;
             }
@@ -340,6 +337,9 @@ pub fn update_category(
             }
             if let Some(parent_id) = request.parent_id {
                 category.parent_id = Some(parent_id);
+            }
+            if let Some(is_active) = request.is_active {
+                category.is_active = is_active;
             }
 
             repository::update_category(conn, &category)?;
@@ -406,9 +406,6 @@ pub fn update_budget(
             if let Some(name) = request.name {
                 budget.name = name;
             }
-            if let Some(category_id) = request.category_id {
-                budget.category_id = category_id;
-            }
             if let Some(amount) = request.amount {
                 budget.amount = amount;
             }
@@ -423,6 +420,9 @@ pub fn update_budget(
             }
             if let Some(rollover) = request.rollover {
                 budget.rollover = rollover;
+            }
+            if let Some(is_active) = request.is_active {
+                budget.is_active = is_active;
             }
 
             repository::update_budget(conn, &budget)?;
@@ -729,12 +729,6 @@ pub fn update_recurring(
         db.with_connection(|conn| {
             let mut recurring = repository::get_recurring_by_id(conn, &request.id)?;
 
-            if let Some(account_id) = request.account_id {
-                recurring.account_id = account_id;
-            }
-            if let Some(transaction_type) = request.transaction_type {
-                recurring.transaction_type = transaction_type;
-            }
             if let Some(amount) = request.amount {
                 recurring.amount = amount;
             }
@@ -750,14 +744,8 @@ pub fn update_recurring(
             if let Some(frequency) = request.frequency {
                 recurring.frequency = frequency;
             }
-            if let Some(start_date) = request.start_date {
-                recurring.start_date = start_date;
-            }
             if let Some(end_date) = request.end_date {
                 recurring.end_date = Some(end_date);
-            }
-            if let Some(next_occurrence) = request.next_occurrence {
-                recurring.next_occurrence = next_occurrence;
             }
             if let Some(day_of_month) = request.day_of_month {
                 recurring.day_of_month = Some(day_of_month);
@@ -767,6 +755,9 @@ pub fn update_recurring(
             }
             if let Some(reminder_days) = request.reminder_days {
                 recurring.reminder_days = Some(reminder_days);
+            }
+            if let Some(is_active) = request.is_active {
+                recurring.is_active = is_active;
             }
 
             repository::update_recurring(conn, &recurring)?;
@@ -838,9 +829,6 @@ pub fn update_goal(
 
             if let Some(name) = request.name {
                 goal.name = name;
-            }
-            if let Some(goal_type) = request.goal_type {
-                goal.goal_type = goal_type;
             }
             if let Some(target_amount) = request.target_amount {
                 goal.target_amount = target_amount;
