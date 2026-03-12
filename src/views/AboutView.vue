@@ -123,7 +123,7 @@ onMounted(async () => {
           <div class="flex flex-wrap gap-6 text-sm mb-4">
             <div>
               <span class="text-gray-500 dark:text-gray-400">Author:</span>
-              <span class="ml-2 text-gray-700 dark:text-gray-300 font-medium">Matt Milano</span>
+              <span class="ml-2 text-gray-700 dark:text-gray-300 font-medium">Indomitus Group</span>
             </div>
             <div>
               <span class="text-gray-500 dark:text-gray-400">License:</span>
