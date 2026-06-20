@@ -76,8 +76,15 @@ export const createTransfer = (request: CreateTransferRequest) =>
 // Categories
 export const getCategories = () => invoke<Category[]>('get_categories');
 
+export const getCategory = (id: string) => invoke<Category>('get_category', { id });
+
 export const createCategory = (request: CreateCategoryRequest) =>
   invoke<Category>('create_category', { request });
+
+export const updateCategory = (request: Partial<Category> & { id: string }) =>
+  invoke<Category>('update_category', { request });
+
+export const deleteCategory = (id: string) => invoke<void>('delete_category', { id });
 
 // Budgets
 export const createBudget = (request: CreateBudgetRequest) =>

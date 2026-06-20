@@ -479,7 +479,6 @@ pub fn get_transactions(
     let rows = stmt.query_map(param_refs.as_slice(), |row| transaction_from_row(row))?;
 
     let mut transactions = Vec::new();
-    let mut error_count = 0;
 
     for result in rows {
         match result {
@@ -512,17 +511,11 @@ pub fn get_transactions(
                 }
                 transactions.push(tx);
             }
-            Err(e) => {
-                error_count += 1;
-                if error_count <= 5 {
-                    eprintln!("Error parsing transaction row: {:?}", e);
-                }
+            Err(_) => {
+                // Skip malformed rows - this can happen with schema changes
+                // or corrupted data. The transaction is simply not included.
             }
         }
-    }
-
-    if error_count > 0 {
-        eprintln!("Total transaction parsing errors: {}", error_count);
     }
 
     Ok(transactions)

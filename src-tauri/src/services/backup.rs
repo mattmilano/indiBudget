@@ -118,65 +118,124 @@ pub fn import_backup_from_file(db: &Database, path: &Path) -> Result<BackupMetad
     let metadata = backup.metadata.clone();
 
     let result = db.with_connection(|conn| {
+        let mut import_errors: Vec<String> = Vec::new();
+
+        // Helper to check if an error is a UNIQUE constraint violation (expected for existing records)
+        let is_duplicate_error = |e: &DatabaseError| {
+            matches!(e, DatabaseError::Sqlite(rusqlite::Error::SqliteFailure(err, _))
+                if err.code == rusqlite::ErrorCode::ConstraintViolation)
+        };
+
         // Import categories first (other data may reference them)
+        // Note: System categories already exist, so UNIQUE violations are expected
         for cat_json in &backup.categories {
-            if let Ok(cat) = serde_json::from_value::<crate::models::Category>(cat_json.clone()) {
-                let _ = repository::create_category(conn, &cat);
+            match serde_json::from_value::<crate::models::Category>(cat_json.clone()) {
+                Ok(cat) => {
+                    if let Err(e) = repository::create_category(conn, &cat) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Category '{}': {}", cat.name, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Category parse error: {}", e)),
             }
         }
 
         // Import accounts
         // Handle backwards compatibility: old backups have "balance" but not "starting_balance"
         for acc_json in &backup.accounts {
-            if let Ok(mut acc) = serde_json::from_value::<crate::models::Account>(acc_json.clone()) {
-                // If this is an old backup with balance but no starting_balance, use balance as starting_balance
-                if acc.starting_balance == rust_decimal::Decimal::ZERO && acc.balance != rust_decimal::Decimal::ZERO {
-                    acc.starting_balance = acc.balance;
+            match serde_json::from_value::<crate::models::Account>(acc_json.clone()) {
+                Ok(mut acc) => {
+                    if acc.starting_balance == rust_decimal::Decimal::ZERO && acc.balance != rust_decimal::Decimal::ZERO {
+                        acc.starting_balance = acc.balance;
+                    }
+                    if let Err(e) = repository::create_account(conn, &acc) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Account '{}': {}", acc.name, e));
+                        }
+                    }
                 }
-                let _ = repository::create_account(conn, &acc);
+                Err(e) => import_errors.push(format!("Account parse error: {}", e)),
             }
         }
 
         // Import budgets
         for budget_json in &backup.budgets {
-            if let Ok(budget) = serde_json::from_value::<crate::models::Budget>(budget_json.clone())
-            {
-                let _ = repository::create_budget(conn, &budget);
+            match serde_json::from_value::<crate::models::Budget>(budget_json.clone()) {
+                Ok(budget) => {
+                    if let Err(e) = repository::create_budget(conn, &budget) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Budget '{}': {}", budget.name, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Budget parse error: {}", e)),
             }
         }
 
         // Import recurring transactions
         for rec_json in &backup.recurring {
-            if let Ok(rec) =
-                serde_json::from_value::<crate::models::RecurringTransaction>(rec_json.clone())
-            {
-                let _ = repository::create_recurring(conn, &rec);
+            match serde_json::from_value::<crate::models::RecurringTransaction>(rec_json.clone()) {
+                Ok(rec) => {
+                    if let Err(e) = repository::create_recurring(conn, &rec) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Recurring '{}': {}", rec.description, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Recurring parse error: {}", e)),
             }
         }
 
         // Import goals
         for goal_json in &backup.goals {
-            if let Ok(goal) =
-                serde_json::from_value::<crate::models::SavingsGoal>(goal_json.clone())
-            {
-                let _ = repository::create_goal(conn, &goal);
+            match serde_json::from_value::<crate::models::SavingsGoal>(goal_json.clone()) {
+                Ok(goal) => {
+                    if let Err(e) = repository::create_goal(conn, &goal) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Goal '{}': {}", goal.name, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Goal parse error: {}", e)),
             }
         }
 
         // Import transactions
         for tx_json in &backup.transactions {
-            if let Ok(tx) = serde_json::from_value::<crate::models::Transaction>(tx_json.clone()) {
-                let _ = repository::create_transaction(conn, &tx);
+            match serde_json::from_value::<crate::models::Transaction>(tx_json.clone()) {
+                Ok(tx) => {
+                    if let Err(e) = repository::create_transaction(conn, &tx) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Transaction '{}': {}", tx.description, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Transaction parse error: {}", e)),
             }
         }
 
         // Import category rules
         for rule_json in &backup.category_rules {
-            if let Ok(rule) =
-                serde_json::from_value::<crate::models::CategoryRule>(rule_json.clone())
-            {
-                let _ = repository::create_category_rule(conn, &rule);
+            match serde_json::from_value::<crate::models::CategoryRule>(rule_json.clone()) {
+                Ok(rule) => {
+                    if let Err(e) = repository::create_category_rule(conn, &rule) {
+                        if !is_duplicate_error(&e) {
+                            import_errors.push(format!("Rule '{}': {}", rule.pattern, e));
+                        }
+                    }
+                }
+                Err(e) => import_errors.push(format!("Rule parse error: {}", e)),
             }
+        }
+
+        // If there were any non-duplicate errors, report them
+        if !import_errors.is_empty() {
+            return Err(DatabaseError::InvalidData(format!(
+                "Backup imported with {} errors: {}",
+                import_errors.len(),
+                import_errors.join("; ")
+            )));
         }
 
         Ok(())

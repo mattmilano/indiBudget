@@ -104,10 +104,21 @@ async function handleEditSubmit() {
   if (!editingCategory.value || !editForm.value.name.trim()) {
     return;
   }
-  // Note: We don't have an update API yet, so we'll just show a message
-  alert('Category updated successfully! (Note: Backend API for updates is pending)');
-  showEditModal.value = false;
-  editingCategory.value = null;
+  try {
+    const { updateCategory } = await import('../services/api');
+    await updateCategory({
+      id: editingCategory.value.id,
+      name: editForm.value.name,
+      color: editForm.value.color,
+      icon: editForm.value.icon || undefined,
+    });
+    await categoriesStore.fetchCategories();
+    showEditModal.value = false;
+    editingCategory.value = null;
+  } catch (e) {
+    console.error('Failed to update category:', e);
+    alert('Failed to update category. Please try again.');
+  }
 }
 
 function confirmDelete(category: Category) {
@@ -119,12 +130,18 @@ function confirmDelete(category: Category) {
   showDeleteConfirm.value = true;
 }
 
-async function deleteCategory() {
+async function handleDeleteCategory() {
   if (!categoryToDelete.value) return;
-  // Note: We don't have a delete API yet, so we'll just show a message
-  alert('Category deleted! (Note: Backend API for deletes is pending)');
-  showDeleteConfirm.value = false;
-  categoryToDelete.value = null;
+  try {
+    const { deleteCategory } = await import('../services/api');
+    await deleteCategory(categoryToDelete.value.id);
+    await categoriesStore.fetchCategories();
+    showDeleteConfirm.value = false;
+    categoryToDelete.value = null;
+  } catch (e) {
+    console.error('Failed to delete category:', e);
+    alert('Failed to delete category. Please try again.');
+  }
 }
 
 onMounted(() => {
@@ -424,7 +441,7 @@ onMounted(() => {
       confirm-text="Delete"
       cancel-text="Cancel"
       variant="danger"
-      @confirm="deleteCategory"
+      @confirm="handleDeleteCategory"
       @cancel="showDeleteConfirm = false"
       @update:show="showDeleteConfirm = $event"
     />
