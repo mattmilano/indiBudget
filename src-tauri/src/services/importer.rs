@@ -324,6 +324,32 @@ fn generate_import_id(date: &str, description: &str, amount: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
+/// Disambiguate `imported_id`s for a batch of parsed transactions in file order.
+///
+/// The base id is a hash of (date, description, amount). Two genuinely distinct
+/// but identical-looking transactions in the same file (e.g. two $4.50 coffees
+/// on the same day) would otherwise collide and the second would be wrongly
+/// dropped as a duplicate on import (footgun F7).
+///
+/// We keep the FIRST occurrence's id byte-identical to the legacy scheme (so
+/// previously-imported databases keep matching) and append `-1`, `-2`, ... to
+/// each subsequent identical row. Re-importing the same file reproduces the
+/// same indices, so import stays idempotent by `imported_id` (invariant I7).
+pub fn disambiguate_import_ids(txns: &mut [Transaction]) {
+    use std::collections::HashMap;
+
+    let mut occurrences: HashMap<String, u32> = HashMap::new();
+    for tx in txns.iter_mut() {
+        if let Some(base) = tx.imported_id.clone() {
+            let count = occurrences.entry(base.clone()).or_insert(0);
+            if *count > 0 {
+                tx.imported_id = Some(format!("{}-{}", base, count));
+            }
+            *count += 1;
+        }
+    }
+}
+
 pub fn preview_import(
     path: &Path,
     mapping: &ImportMapping,

@@ -924,27 +924,32 @@ pub fn import_transactions(
             let mut skipped = 0;
             let mut errors = Vec::new();
 
+            // Parse every row first so we can disambiguate identical-looking
+            // rows within this file before dedup (footgun F7). Errors are
+            // reported, not silently dropped.
+            let mut parsed: Vec<Transaction> = Vec::new();
             for raw in &raw_transactions {
                 match importer::parse_transaction(raw, &account_id, &mapping.date_format) {
-                    Ok(mut tx) => {
-                        if let Some(ref imported_id) = tx.imported_id {
-                            if repository::check_duplicate_transaction(conn, imported_id)? {
-                                skipped += 1;
-                                continue;
-                            }
-                        }
+                    Ok(tx) => parsed.push(tx),
+                    Err(e) => errors.push(format!("Row error: {}", e)),
+                }
+            }
+            importer::disambiguate_import_ids(&mut parsed);
 
-                        if tx.category_id.is_none() {
-                            tx.category_id = categorizer.categorize(&tx);
-                        }
-
-                        repository::create_transaction(conn, &tx)?;
-                        imported.push(tx);
-                    }
-                    Err(e) => {
-                        errors.push(format!("Row error: {}", e));
+            for mut tx in parsed {
+                if let Some(ref imported_id) = tx.imported_id {
+                    if repository::check_duplicate_transaction(conn, imported_id)? {
+                        skipped += 1;
+                        continue;
                     }
                 }
+
+                if tx.category_id.is_none() {
+                    tx.category_id = categorizer.categorize(&tx);
+                }
+
+                repository::create_transaction(conn, &tx)?;
+                imported.push(tx);
             }
 
             Ok(importer::ImportResult {
