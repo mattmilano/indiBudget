@@ -71,12 +71,13 @@ fn spending_by_category_excludes_income_and_transfers() {
 #[test]
 fn monthly_trend_net_equals_income_minus_expense_and_ignores_transfers() {
     let db = db();
-    let acct = new_account(&db, "Checking", AccountType::Checking, "0.00");
+    let checking = new_account(&db, "Checking", AccountType::Checking, "0.00");
+    let savings = new_account(&db, "Savings", AccountType::Savings, "0.00");
 
-    add_income(&db, &acct, "3000.00", "2026-06-05", "salary", None);
-    add_expense(&db, &acct, "1200.00", "2026-06-10", "rent", None);
-    add_expense(&db, &acct, "300.00", "2026-06-15", "food", None);
-    add_transfer(&db, &acct, "999.00", "2026-06-20", "to savings"); // must be ignored
+    add_income(&db, &checking, "3000.00", "2026-06-05", "salary", None);
+    add_expense(&db, &checking, "1200.00", "2026-06-10", "rent", None);
+    add_expense(&db, &checking, "300.00", "2026-06-15", "food", None);
+    add_transfer(&db, &checking, &savings, "999.00", "2026-06-20", "to savings"); // must be ignored
 
     let trends = calculate_monthly_trends(&all_transactions(&db), 12);
     let june = trends
@@ -96,12 +97,13 @@ fn cash_flow_running_balance_reconciles_to_starting_plus_net() {
     // I9: ending running balance == starting_balance + (income − expense) over
     // the period. Transfers excluded from income/expense totals.
     let db = db();
-    let acct = new_account(&db, "Checking", AccountType::Checking, "0.00");
+    let checking = new_account(&db, "Checking", AccountType::Checking, "0.00");
+    let savings = new_account(&db, "Savings", AccountType::Savings, "0.00");
 
-    add_income(&db, &acct, "1000.00", "2026-06-01", "salary", None);
-    add_expense(&db, &acct, "200.00", "2026-06-02", "groceries", None);
-    add_expense(&db, &acct, "50.00", "2026-06-03", "gas", None);
-    add_transfer(&db, &acct, "400.00", "2026-06-02", "to savings"); // ignored
+    add_income(&db, &checking, "1000.00", "2026-06-01", "salary", None);
+    add_expense(&db, &checking, "200.00", "2026-06-02", "groceries", None);
+    add_expense(&db, &checking, "50.00", "2026-06-03", "gas", None);
+    add_transfer(&db, &checking, &savings, "400.00", "2026-06-02", "to savings"); // ignored
 
     let start = date("2026-06-01");
     let end = date("2026-06-30");

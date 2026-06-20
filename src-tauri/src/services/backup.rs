@@ -126,8 +126,13 @@ pub fn import_backup_from_file(db: &Database, path: &Path) -> Result<BackupMetad
         }
 
         // Import accounts
+        // Handle backwards compatibility: old backups have "balance" but not "starting_balance"
         for acc_json in &backup.accounts {
-            if let Ok(acc) = serde_json::from_value::<crate::models::Account>(acc_json.clone()) {
+            if let Ok(mut acc) = serde_json::from_value::<crate::models::Account>(acc_json.clone()) {
+                // If this is an old backup with balance but no starting_balance, use balance as starting_balance
+                if acc.starting_balance == rust_decimal::Decimal::ZERO && acc.balance != rust_decimal::Decimal::ZERO {
+                    acc.starting_balance = acc.balance;
+                }
                 let _ = repository::create_account(conn, &acc);
             }
         }

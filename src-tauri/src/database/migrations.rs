@@ -25,6 +25,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_005_IMPORT_RULES, 5),
         (MIGRATION_006_CANCELLED_SUBSCRIPTIONS, 6),
         (MIGRATION_007_USER_CATEGORY_RULES, 7),
+        (MIGRATION_008_DERIVED_BALANCES, 8),
     ];
 
     for (sql, version) in migrations {
@@ -211,4 +212,20 @@ const MIGRATION_007_USER_CATEGORY_RULES: &str = r#"
 
     -- User rules get highest priority (100) by default to override system rules
     CREATE INDEX IF NOT EXISTS idx_category_rules_user ON category_rules(is_user_created);
+"#;
+
+const MIGRATION_008_DERIVED_BALANCES: &str = r#"
+    -- Rename balance to starting_balance: this is the account's opening balance,
+    -- and the current balance is now derived from transactions.
+    ALTER TABLE accounts RENAME COLUMN balance TO starting_balance;
+
+    -- Add transfer_pair_id to link the two sides of a transfer together.
+    -- Both transactions in a transfer share the same transfer_pair_id.
+    ALTER TABLE transactions ADD COLUMN transfer_pair_id TEXT;
+
+    -- Index for efficient transfer pair lookups
+    CREATE INDEX IF NOT EXISTS idx_transactions_transfer_pair ON transactions(transfer_pair_id);
+
+    -- Index to speed up balance computation (account + type for SUM queries)
+    CREATE INDEX IF NOT EXISTS idx_transactions_balance ON transactions(account_id, transaction_type);
 "#;

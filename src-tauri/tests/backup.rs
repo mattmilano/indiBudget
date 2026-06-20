@@ -30,10 +30,10 @@ fn export_then_import_into_fresh_db_reproduces_data() {
     let src = db();
     let groceries = new_category(&src, "Groceries", CategoryType::Expense, "#00aa00");
     let checking = new_account(&src, "Checking", AccountType::Checking, "1500.00");
-    let _savings = new_account(&src, "Savings", AccountType::Savings, "8000.00");
+    let savings = new_account(&src, "Savings", AccountType::Savings, "8000.00");
     add_expense(&src, &checking, "85.40", "2026-06-03", "Market", Some(&groceries));
     add_income(&src, &checking, "3000.00", "2026-06-01", "Salary", None);
-    add_transfer(&src, &checking, "500.00", "2026-06-02", "To savings");
+    add_transfer(&src, &checking, &savings, "500.00", "2026-06-02", "To savings");
 
     let src_txns = all_transactions(&src);
     let src_accounts = src

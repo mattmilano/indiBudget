@@ -74,6 +74,21 @@ export interface TransactionFilter {
   status?: TransactionStatus[];
 }
 
+export interface CreateTransferRequest {
+  from_account_id: string;
+  to_account_id: string;
+  amount: string;
+  date: string;
+  description?: string;
+  notes?: string;
+}
+
+export interface TransferResult {
+  from_transaction_id: string;
+  to_transaction_id: string;
+  transfer_pair_id: string;
+}
+
 export interface Category {
   id: string;
   name: string;

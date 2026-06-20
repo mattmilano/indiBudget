@@ -4,6 +4,8 @@ import type {
   CreateAccountRequest,
   Transaction,
   CreateTransactionRequest,
+  CreateTransferRequest,
+  TransferResult,
   TransactionFilter,
   Category,
   CreateCategoryRequest,
@@ -66,6 +68,10 @@ export const updateTransaction = (request: Partial<Transaction> & { id: string }
   invoke<Transaction>('update_transaction', { request });
 
 export const deleteTransaction = (id: string) => invoke<void>('delete_transaction', { id });
+
+// Transfers (creates linked transactions between two accounts)
+export const createTransfer = (request: CreateTransferRequest) =>
+  invoke<TransferResult>('create_transfer', { request });
 
 // Categories
 export const getCategories = () => invoke<Category[]>('get_categories');

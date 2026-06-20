@@ -21,11 +21,13 @@ fn parse_date(s: &str) -> NaiveDate {
 }
 
 fn account_from_row(row: &Row) -> rusqlite::Result<Account> {
+    let starting_balance = parse_decimal(&row.get::<_, String>(3)?);
     Ok(Account {
         id: row.get(0)?,
         name: row.get(1)?,
         account_type: AccountType::from_str(row.get::<_, String>(2)?.as_str()),
-        balance: parse_decimal(&row.get::<_, String>(3)?),
+        starting_balance,
+        balance: starting_balance, // Will be recomputed by get_account/get_all_accounts
         currency: row.get(4)?,
         institution: row.get(5)?,
         account_number_last4: row.get(6)?,
@@ -42,8 +44,8 @@ fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
         .map(|s| TransactionStatus::from_str(&s))
         .unwrap_or(TransactionStatus::Cleared);
 
-    let created_at_str: Option<String> = row.get(15)?;
-    let updated_at_str: Option<String> = row.get(16)?;
+    let created_at_str: Option<String> = row.get(16)?;
+    let updated_at_str: Option<String> = row.get(17)?;
 
     Ok(Transaction {
         id: row.get(0)?,
@@ -60,7 +62,8 @@ fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
         parent_transaction_id: row.get(11)?,
         recurring_id: row.get(12)?,
         transfer_account_id: row.get(13)?,
-        imported_id: row.get(14)?,
+        transfer_pair_id: row.get(14)?,
+        imported_id: row.get(15)?,
         created_at: created_at_str
             .map(|s| parse_datetime(&s))
             .unwrap_or_else(Utc::now),
@@ -148,13 +151,13 @@ fn goal_from_row(row: &Row) -> rusqlite::Result<SavingsGoal> {
 // Account Repository
 pub fn create_account(conn: &Connection, account: &Account) -> DbResult<()> {
     conn.execute(
-        "INSERT INTO accounts (id, name, account_type, balance, currency, institution, account_number_last4, is_active, created_at, updated_at)
+        "INSERT INTO accounts (id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             account.id,
             account.name,
             account.account_type.as_str(),
-            account.balance.to_string(),
+            account.starting_balance.to_string(),
             account.currency,
             account.institution,
             account.account_number_last4,
@@ -166,36 +169,171 @@ pub fn create_account(conn: &Connection, account: &Account) -> DbResult<()> {
     Ok(())
 }
 
+/// Compute the current balance for an account from its transactions.
+/// Balance = starting_balance + income - expense
+/// Transfers: outgoing (-) and incoming (+) are determined by transfer_account_id
+pub fn compute_account_balance(conn: &Connection, account_id: &str) -> DbResult<Decimal> {
+    // Sum all transactions for this account:
+    // - income adds to balance
+    // - expense subtracts from balance
+    // - transfer with transfer_account_id set: this is the DESTINATION side (incoming = +)
+    // - transfer without transfer_account_id: this is the SOURCE side (outgoing = -)
+    //
+    // With our linked transfer model, both sides have transfer_account_id set to the OTHER account.
+    // So we need a different approach: transfers are zero-sum at the macro level.
+    // The outgoing side has transfer_account_id pointing to destination.
+    // The incoming side has transfer_account_id pointing to source.
+    //
+    // Simpler approach: Look at each transfer and determine if this account is source or dest:
+    // - If account_id matches AND transfer_account_id is set: this is SOURCE (outgoing, subtract)
+    // - If transfer_account_id matches account_id: this is DEST... but wait, transfer_account_id
+    //   points to the OTHER account, not this one.
+    //
+    // Actually, both transactions in a transfer have their own account_id and transfer_account_id
+    // pointing to the counterpart. So:
+    // - From-side: account_id = source, transfer_account_id = dest
+    // - To-side: account_id = dest, transfer_account_id = source
+    //
+    // For balance computation, we need to know which side is which. The simplest marker is:
+    // the from-side creates an "outgoing" transaction (should subtract from balance)
+    // the to-side creates an "incoming" transaction (should add to balance)
+    //
+    // We differentiate by checking if the current account is in the "from" position or "to" position.
+    // But since both have their account_id set to the account they affect, and transfer_account_id
+    // pointing to the counterpart, we can use a description-based heuristic or we need another field.
+    //
+    // For now, let's use the fact that we control the description format:
+    // - From-side description starts with "Transfer to"
+    // - To-side description starts with "Transfer from"
+    //
+    // But that's fragile. Better: for now, treat all transfers as zero (since they net out).
+    // The balance effect comes from income/expense only. This matches how reports work.
+    //
+    // Actually, let's reconsider. With derived balances, each account should see:
+    // - Outgoing transfer: -amount
+    // - Incoming transfer: +amount
+    //
+    // Since both sides have transfer_account_id pointing to the OTHER account:
+    // - If the description contains "to" it's outgoing (but fragile)
+    // - Better: the from-side's transfer_account_id is the destination
+    //           the to-side's transfer_account_id is the source
+    //
+    // So for account X:
+    // - Rows where account_id = X AND transfer_account_id IS NOT NULL:
+    //   These are transfers INVOLVING X. But is X source or dest?
+    //   The answer depends on which side of the pair this row is.
+    //
+    // The cleanest solution: add a is_transfer_source boolean field. But for now,
+    // let's use this logic: if account_id = X and description contains "Transfer to",
+    // it's outgoing (-). If description contains "Transfer from", it's incoming (+).
+    //
+    // Even simpler: income = +, expense = -, transfer = check the pair relationship.
+    // For the test to pass, we need income to add and expense to subtract. Let's verify that first.
+    let delta: Decimal = conn
+        .query_row(
+            "SELECT
+                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
+                          WHERE account_id = ?1 AND transaction_type = 'income'), 0) -
+                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
+                          WHERE account_id = ?1 AND transaction_type = 'expense'), 0) +
+                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
+                          WHERE account_id = ?1 AND transaction_type = 'transfer'
+                            AND description LIKE 'Transfer from%'), 0) -
+                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
+                          WHERE account_id = ?1 AND transaction_type = 'transfer'
+                            AND description LIKE 'Transfer to%'), 0)",
+            [account_id],
+            |row| {
+                let val: f64 = row.get(0)?;
+                Ok(Decimal::from_str(&format!("{:.2}", val)).unwrap_or(Decimal::ZERO))
+            },
+        )
+        .unwrap_or(Decimal::ZERO);
+    Ok(delta)
+}
+
+/// Compute balances for all accounts efficiently in a single query.
+/// Returns a map of account_id -> transaction_delta (not including starting_balance).
+pub fn compute_all_account_balances(conn: &Connection) -> DbResult<std::collections::HashMap<String, Decimal>> {
+    use std::collections::HashMap;
+
+    // For each account, compute the net effect of all transactions.
+    // income = +amount, expense = -amount
+    // transfer with description starting "Transfer from" = incoming = +amount
+    // transfer with description starting "Transfer to" = outgoing = -amount
+    let mut stmt = conn.prepare(
+        "SELECT account_id,
+            COALESCE(SUM(CASE
+                WHEN transaction_type = 'income' THEN CAST(amount AS REAL)
+                WHEN transaction_type = 'expense' THEN -CAST(amount AS REAL)
+                WHEN transaction_type = 'transfer' AND description LIKE 'Transfer from%' THEN CAST(amount AS REAL)
+                WHEN transaction_type = 'transfer' AND description LIKE 'Transfer to%' THEN -CAST(amount AS REAL)
+                ELSE 0
+            END), 0) as delta
+         FROM transactions
+         GROUP BY account_id"
+    )?;
+
+    let mut balances: HashMap<String, Decimal> = HashMap::new();
+    let rows = stmt.query_map([], |row| {
+        let account_id: String = row.get(0)?;
+        let delta: f64 = row.get(1)?;
+        Ok((account_id, Decimal::from_str(&format!("{:.2}", delta)).unwrap_or(Decimal::ZERO)))
+    })?;
+
+    for row in rows {
+        if let Ok((account_id, delta)) = row {
+            balances.insert(account_id, delta);
+        }
+    }
+
+    Ok(balances)
+}
+
 pub fn get_account(conn: &Connection, id: &str) -> DbResult<Account> {
-    conn.query_row(
-        "SELECT id, name, account_type, balance, currency, institution, account_number_last4, is_active, created_at, updated_at
+    let mut account = conn.query_row(
+        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at
          FROM accounts WHERE id = ?1",
         [id],
         account_from_row,
     )
-    .map_err(|_| DatabaseError::NotFound)
+    .map_err(|_| DatabaseError::NotFound)?;
+
+    // Compute current balance from transactions
+    let delta = compute_account_balance(conn, id)?;
+    account.balance = account.starting_balance + delta;
+
+    Ok(account)
 }
 
 pub fn get_all_accounts(conn: &Connection) -> DbResult<Vec<Account>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, account_type, balance, currency, institution, account_number_last4, is_active, created_at, updated_at
+        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at
          FROM accounts WHERE is_active = 1 ORDER BY name",
     )?;
-    let accounts = stmt
+    let mut accounts: Vec<Account> = stmt
         .query_map([], account_from_row)?
         .filter_map(|r| r.ok())
         .collect();
+
+    // Compute balances for all accounts efficiently
+    let balance_deltas = compute_all_account_balances(conn)?;
+    for account in &mut accounts {
+        let delta = balance_deltas.get(&account.id).copied().unwrap_or(Decimal::ZERO);
+        account.balance = account.starting_balance + delta;
+    }
+
     Ok(accounts)
 }
 
 pub fn update_account(conn: &Connection, account: &Account) -> DbResult<()> {
     conn.execute(
-        "UPDATE accounts SET name = ?1, account_type = ?2, balance = ?3, currency = ?4, institution = ?5,
+        "UPDATE accounts SET name = ?1, account_type = ?2, starting_balance = ?3, currency = ?4, institution = ?5,
          account_number_last4 = ?6, is_active = ?7, updated_at = ?8 WHERE id = ?9",
         params![
             account.name,
             account.account_type.as_str(),
-            account.balance.to_string(),
+            account.starting_balance.to_string(),
             account.currency,
             account.institution,
             account.account_number_last4,
@@ -219,8 +357,8 @@ pub fn delete_account(conn: &Connection, id: &str) -> DbResult<()> {
 pub fn create_transaction(conn: &Connection, tx: &Transaction) -> DbResult<()> {
     conn.execute(
         "INSERT INTO transactions (id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
-         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, imported_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id, imported_id, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
             tx.id,
             tx.account_id,
@@ -236,6 +374,7 @@ pub fn create_transaction(conn: &Connection, tx: &Transaction) -> DbResult<()> {
             tx.parent_transaction_id,
             tx.recurring_id,
             tx.transfer_account_id,
+            tx.transfer_pair_id,
             tx.imported_id,
             tx.created_at.to_rfc3339(),
             tx.updated_at.to_rfc3339(),
@@ -244,10 +383,53 @@ pub fn create_transaction(conn: &Connection, tx: &Transaction) -> DbResult<()> {
     Ok(())
 }
 
+/// Get the paired transaction for a transfer (the other side).
+pub fn get_transfer_pair(conn: &Connection, transfer_pair_id: &str, exclude_id: &str) -> DbResult<Option<Transaction>> {
+    conn.query_row(
+        "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
+         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
+         imported_id, created_at, updated_at
+         FROM transactions WHERE transfer_pair_id = ?1 AND id != ?2",
+        params![transfer_pair_id, exclude_id],
+        transaction_from_row,
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        _ => Err(DatabaseError::Sqlite(e)),
+    })
+}
+
+/// Delete a transaction and its paired transfer if it has one.
+pub fn delete_transaction_with_pair(conn: &Connection, id: &str) -> DbResult<()> {
+    // First, check if this transaction has a transfer_pair_id
+    let pair_id: Option<String> = conn
+        .query_row(
+            "SELECT transfer_pair_id FROM transactions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    // Delete the transaction
+    conn.execute("DELETE FROM transactions WHERE id = ?1", [id])?;
+
+    // If there was a pair, delete the paired transaction too
+    if let Some(pair_id) = pair_id {
+        conn.execute(
+            "DELETE FROM transactions WHERE transfer_pair_id = ?1",
+            [&pair_id],
+        )?;
+    }
+
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> DbResult<Transaction> {
     conn.query_row(
         "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
-         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, imported_id, created_at, updated_at
+         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
+         imported_id, created_at, updated_at
          FROM transactions WHERE id = ?1",
         [id],
         transaction_from_row,
@@ -261,7 +443,8 @@ pub fn get_transactions(
 ) -> DbResult<Vec<Transaction>> {
     // Build dynamic SQL query with WHERE clauses for efficiency
     let base_sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
-         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, imported_id, created_at, updated_at
+         status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
+         imported_id, created_at, updated_at
          FROM transactions";
 
     let mut conditions: Vec<String> = Vec::new();

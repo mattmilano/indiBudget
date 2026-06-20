@@ -224,28 +224,21 @@ async function executeTransfer() {
     const fromAccount = accountsStore.accountsById[transferForm.value.fromAccountId];
     const toAccount = accountsStore.accountsById[transferForm.value.toAccountId];
 
-    // Create expense transaction from source account
-    await transactionsStore.createTransaction({
-      account_id: transferForm.value.fromAccountId,
-      transaction_type: 'transfer',
+    // Use the new linked transfer API - creates two transactions with the same transfer_pair_id
+    const { createTransfer } = await import('../services/api');
+    await createTransfer({
+      from_account_id: transferForm.value.fromAccountId,
+      to_account_id: transferForm.value.toAccountId,
       amount: transferForm.value.amount,
       date: transferForm.value.date,
-      description: `Transfer to ${toAccount?.name || 'Unknown'}`,
+      description: transferForm.value.notes || undefined,
       notes: transferForm.value.notes || undefined,
     });
 
-    // Create income transaction to destination account
-    await transactionsStore.createTransaction({
-      account_id: transferForm.value.toAccountId,
-      transaction_type: 'transfer',
-      amount: transferForm.value.amount,
-      date: transferForm.value.date,
-      description: `Transfer from ${fromAccount?.name || 'Unknown'}`,
-      notes: transferForm.value.notes || undefined,
-    });
-
-    // Refresh accounts to show updated balances
+    // Refresh accounts to show updated balances (now derived from transactions)
     await accountsStore.fetchAccounts();
+    // Also refresh transactions store if we're tracking them
+    await transactionsStore.fetchTransactions();
 
     showTransferModal.value = false;
     alert(`Successfully transferred ${formatCurrency(amount, fromAccount?.currency || 'USD')} from ${fromAccount?.name} to ${toAccount?.name}.`);

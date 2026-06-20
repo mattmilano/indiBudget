@@ -116,8 +116,9 @@ pub fn create_account(
     with_db(&state, |db| {
         let mut account = Account::new(request.name, request.account_type);
 
-        if let Some(balance) = request.balance {
-            account.balance = balance;
+        if let Some(starting_balance) = request.starting_balance {
+            account.starting_balance = starting_balance;
+            account.balance = starting_balance; // Initially, balance equals starting_balance
         }
         if let Some(currency) = request.currency {
             account.currency = currency;
@@ -161,8 +162,8 @@ pub fn update_account(
             if let Some(account_type) = request.account_type {
                 account.account_type = account_type;
             }
-            if let Some(balance) = request.balance {
-                account.balance = balance;
+            if let Some(starting_balance) = request.starting_balance {
+                account.starting_balance = starting_balance;
             }
             if let Some(currency) = request.currency {
                 account.currency = currency;
@@ -178,7 +179,9 @@ pub fn update_account(
             }
 
             repository::update_account(conn, &account)?;
-            Ok(account)
+
+            // Re-fetch to get computed balance
+            repository::get_account(conn, &request.id)
         })
     })
 }
@@ -281,7 +284,76 @@ pub fn update_transaction(
 #[tauri::command]
 pub fn delete_transaction(state: State<AppState>, id: String) -> Result<(), String> {
     with_db(&state, |db| {
-        db.with_connection(|conn| repository::delete_transaction(conn, &id))
+        db.with_connection(|conn| repository::delete_transaction_with_pair(conn, &id))
+    })
+}
+
+/// Create a transfer between two accounts. This creates two linked transactions:
+/// - An expense from the source account (outgoing)
+/// - An income to the destination account (incoming)
+/// Both transactions share the same transfer_pair_id so they stay in sync.
+#[tauri::command]
+pub fn create_transfer(
+    state: State<AppState>,
+    request: CreateTransferRequest,
+) -> Result<TransferResult, String> {
+    use uuid::Uuid;
+
+    if request.from_account_id == request.to_account_id {
+        return Err("Cannot transfer to the same account".to_string());
+    }
+
+    with_db(&state, |db| {
+        db.with_connection(|conn| {
+            // Verify both accounts exist
+            let from_account = repository::get_account(conn, &request.from_account_id)?;
+            let to_account = repository::get_account(conn, &request.to_account_id)?;
+
+            let transfer_pair_id = Uuid::new_v4().to_string();
+
+            // Description format is important for balance computation
+            // "Transfer to" prefix indicates outgoing (subtract from balance)
+            // "Transfer from" prefix indicates incoming (add to balance)
+            let from_desc = request.description.clone()
+                .map(|d| format!("Transfer to {}: {}", to_account.name, d))
+                .unwrap_or_else(|| format!("Transfer to {}", to_account.name));
+            let to_desc = request.description.clone()
+                .map(|d| format!("Transfer from {}: {}", from_account.name, d))
+                .unwrap_or_else(|| format!("Transfer from {}", from_account.name));
+
+            // Create outgoing transaction (expense from source)
+            let mut from_tx = Transaction::new(
+                request.from_account_id.clone(),
+                TransactionType::Transfer,
+                request.amount,
+                request.date,
+                from_desc,
+            );
+            from_tx.transfer_account_id = Some(request.to_account_id.clone());
+            from_tx.transfer_pair_id = Some(transfer_pair_id.clone());
+            from_tx.notes = request.notes.clone();
+
+            // Create incoming transaction (income to destination)
+            let mut to_tx = Transaction::new(
+                request.to_account_id.clone(),
+                TransactionType::Transfer,
+                request.amount,
+                request.date,
+                to_desc,
+            );
+            to_tx.transfer_account_id = Some(request.from_account_id.clone());
+            to_tx.transfer_pair_id = Some(transfer_pair_id.clone());
+            to_tx.notes = request.notes;
+
+            repository::create_transaction(conn, &from_tx)?;
+            repository::create_transaction(conn, &to_tx)?;
+
+            Ok(TransferResult {
+                from_transaction_id: from_tx.id,
+                to_transaction_id: to_tx.id,
+                transfer_pair_id,
+            })
+        })
     })
 }
 

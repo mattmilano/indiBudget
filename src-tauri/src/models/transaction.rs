@@ -76,6 +76,9 @@ pub struct Transaction {
     pub parent_transaction_id: Option<String>,
     pub recurring_id: Option<String>,
     pub transfer_account_id: Option<String>,
+    /// Links the two sides of a transfer together. Both transactions share
+    /// the same transfer_pair_id so deleting/editing one can update the other.
+    pub transfer_pair_id: Option<String>,
     pub imported_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -105,6 +108,7 @@ impl Transaction {
             parent_transaction_id: None,
             recurring_id: None,
             transfer_account_id: None,
+            transfer_pair_id: None,
             imported_id: None,
             created_at: now,
             updated_at: now,
@@ -171,4 +175,24 @@ pub struct CalendarEvent {
     pub category_color: Option<String>,
     pub is_recurring: bool,
     pub account_name: String,
+}
+
+/// Request to create a transfer between two accounts.
+/// Creates two linked transactions (expense from source, income to destination).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTransferRequest {
+    pub from_account_id: String,
+    pub to_account_id: String,
+    pub amount: Decimal,
+    pub date: NaiveDate,
+    pub description: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// Response from creating a transfer, returns both transaction IDs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferResult {
+    pub from_transaction_id: String,
+    pub to_transaction_id: String,
+    pub transfer_pair_id: String,
 }
