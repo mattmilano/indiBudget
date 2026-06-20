@@ -35,7 +35,7 @@ impl Database {
         }
 
         let conn = Connection::open(&path)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
 
         let db = Self {
             connection: Mutex::new(conn),
@@ -49,7 +49,7 @@ impl Database {
 
     pub fn in_memory() -> DbResult<Self> {
         let conn = Connection::open_in_memory()?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
 
         let db = Self {
             connection: Mutex::new(conn),

@@ -227,64 +227,83 @@ pub fn compute_account_balance(conn: &Connection, account_id: &str) -> DbResult<
     // let's use this logic: if account_id = X and description contains "Transfer to",
     // it's outgoing (-). If description contains "Transfer from", it's incoming (+).
     //
-    // Even simpler: income = +, expense = -, transfer = check the pair relationship.
-    // For the test to pass, we need income to add and expense to subtract. Let's verify that first.
-    let delta: Decimal = conn
-        .query_row(
-            "SELECT
-                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
-                          WHERE account_id = ?1 AND transaction_type = 'income'), 0) -
-                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
-                          WHERE account_id = ?1 AND transaction_type = 'expense'), 0) +
-                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
-                          WHERE account_id = ?1 AND transaction_type = 'transfer'
-                            AND description LIKE 'Transfer from%'), 0) -
-                COALESCE((SELECT SUM(CAST(amount AS REAL)) FROM transactions
-                          WHERE account_id = ?1 AND transaction_type = 'transfer'
-                            AND description LIKE 'Transfer to%'), 0)",
-            [account_id],
-            |row| {
-                let val: f64 = row.get(0)?;
-                Ok(Decimal::from_str(&format!("{:.2}", val)).unwrap_or(Decimal::ZERO))
-            },
-        )
-        .unwrap_or(Decimal::ZERO);
+    // Fetch amounts as strings and sum in Rust to avoid float precision loss.
+    // Exclude is_split=true transactions (split parents) to prevent double-counting.
+    let mut stmt = conn.prepare(
+        "SELECT amount, transaction_type, description FROM transactions
+         WHERE account_id = ?1 AND is_split = 0"
+    )?;
+
+    let mut delta = Decimal::ZERO;
+    let rows = stmt.query_map([account_id], |row| {
+        let amount_str: String = row.get(0)?;
+        let tx_type: String = row.get(1)?;
+        let description: String = row.get(2)?;
+        Ok((amount_str, tx_type, description))
+    })?;
+
+    for row in rows.flatten() {
+        let (amount_str, tx_type, description) = row;
+        let amount = Decimal::from_str(&amount_str).unwrap_or(Decimal::ZERO);
+
+        match tx_type.as_str() {
+            "income" => delta += amount,
+            "expense" => delta -= amount,
+            "transfer" => {
+                if description.starts_with("Transfer from") {
+                    delta += amount;
+                } else if description.starts_with("Transfer to") {
+                    delta -= amount;
+                }
+            }
+            _ => {}
+        }
+    }
+
     Ok(delta)
 }
 
-/// Compute balances for all accounts efficiently in a single query.
+/// Compute balances for all accounts efficiently.
 /// Returns a map of account_id -> transaction_delta (not including starting_balance).
+/// Uses Rust Decimal arithmetic to avoid float precision loss.
+/// Excludes is_split=true transactions (split parents) to prevent double-counting.
 pub fn compute_all_account_balances(conn: &Connection) -> DbResult<std::collections::HashMap<String, Decimal>> {
     use std::collections::HashMap;
 
-    // For each account, compute the net effect of all transactions.
-    // income = +amount, expense = -amount
-    // transfer with description starting "Transfer from" = incoming = +amount
-    // transfer with description starting "Transfer to" = outgoing = -amount
     let mut stmt = conn.prepare(
-        "SELECT account_id,
-            COALESCE(SUM(CASE
-                WHEN transaction_type = 'income' THEN CAST(amount AS REAL)
-                WHEN transaction_type = 'expense' THEN -CAST(amount AS REAL)
-                WHEN transaction_type = 'transfer' AND description LIKE 'Transfer from%' THEN CAST(amount AS REAL)
-                WHEN transaction_type = 'transfer' AND description LIKE 'Transfer to%' THEN -CAST(amount AS REAL)
-                ELSE 0
-            END), 0) as delta
-         FROM transactions
-         GROUP BY account_id"
+        "SELECT account_id, amount, transaction_type, description FROM transactions
+         WHERE is_split = 0"
     )?;
 
     let mut balances: HashMap<String, Decimal> = HashMap::new();
     let rows = stmt.query_map([], |row| {
         let account_id: String = row.get(0)?;
-        let delta: f64 = row.get(1)?;
-        Ok((account_id, Decimal::from_str(&format!("{:.2}", delta)).unwrap_or(Decimal::ZERO)))
+        let amount_str: String = row.get(1)?;
+        let tx_type: String = row.get(2)?;
+        let description: String = row.get(3)?;
+        Ok((account_id, amount_str, tx_type, description))
     })?;
 
-    for row in rows {
-        if let Ok((account_id, delta)) = row {
-            balances.insert(account_id, delta);
-        }
+    for row in rows.flatten() {
+        let (account_id, amount_str, tx_type, description) = row;
+        let amount = Decimal::from_str(&amount_str).unwrap_or(Decimal::ZERO);
+
+        let effect = match tx_type.as_str() {
+            "income" => amount,
+            "expense" => -amount,
+            "transfer" => {
+                if description.starts_with("Transfer from") {
+                    amount
+                } else if description.starts_with("Transfer to") {
+                    -amount
+                } else {
+                    Decimal::ZERO
+                }
+            }
+            _ => Decimal::ZERO,
+        };
+
+        *balances.entry(account_id).or_insert(Decimal::ZERO) += effect;
     }
 
     Ok(balances)
@@ -401,6 +420,7 @@ pub fn get_transfer_pair(conn: &Connection, transfer_pair_id: &str, exclude_id: 
 }
 
 /// Delete a transaction and its paired transfer if it has one.
+/// Uses a transaction to ensure atomicity.
 pub fn delete_transaction_with_pair(conn: &Connection, id: &str) -> DbResult<()> {
     // First, check if this transaction has a transfer_pair_id
     let pair_id: Option<String> = conn
@@ -411,18 +431,34 @@ pub fn delete_transaction_with_pair(conn: &Connection, id: &str) -> DbResult<()>
         )
         .ok();
 
-    // Delete the transaction
-    conn.execute("DELETE FROM transactions WHERE id = ?1", [id])?;
+    // Use a savepoint for atomicity (works within existing transaction context)
+    conn.execute("SAVEPOINT delete_pair", [])?;
 
-    // If there was a pair, delete the paired transaction too
-    if let Some(pair_id) = pair_id {
-        conn.execute(
-            "DELETE FROM transactions WHERE transfer_pair_id = ?1",
-            [&pair_id],
-        )?;
+    let result = (|| {
+        // Delete the transaction
+        conn.execute("DELETE FROM transactions WHERE id = ?1", [id])?;
+
+        // If there was a pair, delete the paired transaction too
+        if let Some(ref pair_id) = pair_id {
+            conn.execute(
+                "DELETE FROM transactions WHERE transfer_pair_id = ?1 AND id != ?2",
+                params![pair_id, id],
+            )?;
+        }
+
+        Ok::<(), DatabaseError>(())
+    })();
+
+    match result {
+        Ok(()) => {
+            conn.execute("RELEASE SAVEPOINT delete_pair", [])?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK TO SAVEPOINT delete_pair", []);
+            Err(e)
+        }
     }
-
-    Ok(())
 }
 
 pub fn get_transaction(conn: &Connection, id: &str) -> DbResult<Transaction> {
@@ -524,7 +560,7 @@ pub fn get_transactions(
 pub fn update_transaction(conn: &Connection, tx: &Transaction) -> DbResult<()> {
     conn.execute(
         "UPDATE transactions SET account_id = ?1, transaction_type = ?2, amount = ?3, date = ?4, description = ?5,
-         category_id = ?6, payee = ?7, notes = ?8, status = ?9, updated_at = ?10 WHERE id = ?11",
+         category_id = ?6, payee = ?7, notes = ?8, status = ?9, is_split = ?10, updated_at = ?11 WHERE id = ?12",
         params![
             tx.account_id,
             tx.transaction_type.as_str(),
@@ -535,6 +571,7 @@ pub fn update_transaction(conn: &Connection, tx: &Transaction) -> DbResult<()> {
             tx.payee,
             tx.notes,
             tx.status.as_str(),
+            tx.is_split as i32,
             Utc::now().to_rfc3339(),
             tx.id,
         ],

@@ -8,6 +8,71 @@ use crate::database::{self, repository, Database, DatabaseError, DbResult};
 use crate::models::*;
 use crate::services::{self, encryption::EncryptionService, importer, Categorizer};
 
+/// Validate that a path is within allowed directories to prevent path traversal attacks.
+/// Allowed: user's home directory and its subdirectories.
+fn validate_path(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+
+    // Canonicalize to resolve any .. or symlinks
+    let canonical = path_buf.canonicalize().map_err(|e| {
+        format!("Invalid path: {}", e)
+    })?;
+
+    // Get home directory
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+
+    // Ensure path is within home directory
+    if !canonical.starts_with(&home) {
+        return Err("Path must be within user's home directory".to_string());
+    }
+
+    // Block access to sensitive directories
+    let sensitive_dirs = [".ssh", ".gnupg", ".config/systemd", ".local/share/keyrings"];
+    for sensitive in &sensitive_dirs {
+        if canonical.starts_with(home.join(sensitive)) {
+            return Err(format!("Access to {} is not allowed", sensitive));
+        }
+    }
+
+    Ok(canonical)
+}
+
+/// Validate path for writing - parent must exist and be writable
+fn validate_write_path(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+
+    // For new files, check the parent directory
+    let parent = path_buf.parent().ok_or("Invalid path: no parent directory")?;
+
+    // Parent must exist
+    if !parent.exists() {
+        return Err("Parent directory does not exist".to_string());
+    }
+
+    // Canonicalize parent to resolve any .. or symlinks
+    let canonical_parent = parent.canonicalize().map_err(|e| {
+        format!("Invalid path: {}", e)
+    })?;
+
+    // Get home directory
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+
+    // Ensure path is within home directory
+    if !canonical_parent.starts_with(&home) {
+        return Err("Path must be within user's home directory".to_string());
+    }
+
+    // Block access to sensitive directories
+    let sensitive_dirs = [".ssh", ".gnupg", ".config/systemd", ".local/share/keyrings"];
+    for sensitive in &sensitive_dirs {
+        if canonical_parent.starts_with(home.join(sensitive)) {
+            return Err(format!("Writing to {} is not allowed", sensitive));
+        }
+    }
+
+    Ok(path_buf)
+}
+
 pub struct AppState {
     pub db: Mutex<Option<Database>>,
     pub encryption: Mutex<Option<EncryptionService>>,
@@ -213,6 +278,7 @@ pub fn create_transaction(
         tx.notes = request.notes;
         tx.status = request.status.unwrap_or(TransactionStatus::Cleared);
         tx.transfer_account_id = request.transfer_account_id;
+        tx.parent_transaction_id = request.parent_transaction_id;
 
         db.with_connection(|conn| {
             repository::create_transaction(conn, &tx)?;
@@ -273,6 +339,9 @@ pub fn update_transaction(
             }
             if let Some(status) = request.status {
                 tx.status = status;
+            }
+            if let Some(is_split) = request.is_split {
+                tx.is_split = is_split;
             }
 
             repository::update_transaction(conn, &tx)?;
@@ -943,7 +1012,7 @@ pub fn delete_goal(state: State<AppState>, id: String) -> Result<(), String> {
 // Import Commands
 #[tauri::command]
 pub fn detect_import_columns(path: String) -> Result<Vec<String>, String> {
-    let path = PathBuf::from(&path);
+    let path = validate_path(&path)?;
     let format = importer::detect_file_format(&path).map_err(|e| e.to_string())?;
 
     match format {
@@ -971,7 +1040,7 @@ pub fn preview_import(
     path: String,
     mapping: importer::ImportMapping,
 ) -> Result<Vec<importer::RawTransaction>, String> {
-    let path = PathBuf::from(&path);
+    let path = validate_path(&path)?;
     importer::preview_import(&path, &mapping).map_err(|e| e.to_string())
 }
 
@@ -982,7 +1051,7 @@ pub fn import_transactions(
     account_id: String,
     mapping: importer::ImportMapping,
 ) -> Result<importer::ImportResult, String> {
-    let path_buf = PathBuf::from(&path);
+    let path_buf = validate_path(&path)?;
 
     // Use import_file which handles all supported formats (CSV, Excel, OFX, QFX, QIF)
     let raw_transactions = importer::import_file(&path_buf, &mapping).map_err(|e| e.to_string())?;
@@ -1609,7 +1678,7 @@ pub fn export_backup(
     state: State<AppState>,
     path: String,
 ) -> Result<services::backup::BackupMetadata, String> {
-    let path_buf = PathBuf::from(&path);
+    let path_buf = validate_write_path(&path)?;
 
     with_db(&state, |db| {
         services::backup::export_backup_to_file(db, &path_buf)
@@ -1622,7 +1691,7 @@ pub fn import_backup(
     state: State<AppState>,
     path: String,
 ) -> Result<services::backup::BackupMetadata, String> {
-    let path_buf = PathBuf::from(&path);
+    let path_buf = validate_path(&path)?;
 
     with_db(&state, |db| {
         services::backup::import_backup_from_file(db, &path_buf)
@@ -1632,7 +1701,7 @@ pub fn import_backup(
 
 #[tauri::command]
 pub fn get_backup_info(path: String) -> Result<services::backup::BackupMetadata, String> {
-    let path_buf = PathBuf::from(&path);
+    let path_buf = validate_path(&path)?;
     services::backup::get_backup_info(&path_buf).map_err(|e| e.to_string())
 }
 

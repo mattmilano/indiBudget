@@ -420,6 +420,14 @@ const barChartOptions = {
   },
 };
 
+// CSV helper to properly escape fields
+function escapeCsvField(field: string): string {
+  if (field.includes('"') || field.includes(',') || field.includes('\n')) {
+    return `"${field.replace(/"/g, '""')}"`;
+  }
+  return field;
+}
+
 // Export functions
 function exportToCSV() {
   const lines: string[] = [];
@@ -454,7 +462,7 @@ function exportToCSV() {
     lines.push('SPENDING BY CATEGORY');
     lines.push('Category,Amount,Percentage');
     spendingByCategory.value.forEach(cat => {
-      lines.push(`"${cat.category_name}",${parseFloat(cat.total).toFixed(2)},${cat.percentage.toFixed(1)}%`);
+      lines.push(`${escapeCsvField(cat.category_name)},${parseFloat(cat.total).toFixed(2)},${cat.percentage.toFixed(1)}%`);
     });
     lines.push('');
   }

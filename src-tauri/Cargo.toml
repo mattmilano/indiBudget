@@ -32,6 +32,7 @@ uuid = { version = "1.8", features = ["v4", "serde"] }
 thiserror = "1.0"
 rust_decimal = { version = "1.35", features = ["serde"] }
 directories = "5.0"
+dirs = "5.0"
 aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"

@@ -182,25 +182,25 @@ async function handleEditSubmit() {
   if (!selectedGoal.value) return;
 
   try {
-    // For now, we'll update the local state since there's no update API
-    // In a real app, you'd call api.updateGoal(editGoal.value)
+    const updatedGoal = await api.updateGoal({
+      id: editGoal.value.id,
+      name: editGoal.value.name,
+      goal_type: editGoal.value.goal_type,
+      target_amount: editGoal.value.target_amount,
+      current_amount: editGoal.value.current_amount,
+      target_date: editGoal.value.target_date,
+      color: editGoal.value.color,
+      notes: editGoal.value.notes,
+    });
     const goalIndex = goals.value.findIndex(g => g.id === editGoal.value.id);
     if (goalIndex !== -1) {
-      goals.value[goalIndex] = {
-        ...goals.value[goalIndex],
-        name: editGoal.value.name,
-        goal_type: editGoal.value.goal_type,
-        target_amount: editGoal.value.target_amount,
-        current_amount: editGoal.value.current_amount ?? goals.value[goalIndex].current_amount,
-        target_date: editGoal.value.target_date,
-        color: editGoal.value.color ?? goals.value[goalIndex].color,
-        notes: editGoal.value.notes,
-      };
+      goals.value[goalIndex] = updatedGoal;
     }
     showEditModal.value = false;
     selectedGoal.value = null;
   } catch (e) {
     console.error('Failed to update goal:', e);
+    alert('Failed to update goal. Please try again.');
   }
 }
 
@@ -213,12 +213,12 @@ async function handleDeleteConfirm() {
   if (!goalToDelete.value) return;
 
   try {
-    // For now, just remove from local state
-    // In a real app, you'd call api.deleteGoal(goalToDelete.value.id)
+    await api.deleteGoal(goalToDelete.value.id);
     goals.value = goals.value.filter(g => g.id !== goalToDelete.value!.id);
     goalToDelete.value = null;
   } catch (e) {
     console.error('Failed to delete goal:', e);
+    alert('Failed to delete goal. Please try again.');
   }
 }
 

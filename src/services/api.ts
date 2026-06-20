@@ -128,6 +128,11 @@ export const getGoals = () => invoke<SavingsGoal[]>('get_goals');
 export const updateGoalProgress = (id: string, amount: string) =>
   invoke<void>('update_goal_progress', { id, amount });
 
+export const updateGoal = (request: Partial<SavingsGoal> & { id: string }) =>
+  invoke<SavingsGoal>('update_goal', { request });
+
+export const deleteGoal = (id: string) => invoke<void>('delete_goal', { id });
+
 // Import
 export const detectImportColumns = (path: string) =>
   invoke<string[]>('detect_import_columns', { path });

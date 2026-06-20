@@ -128,6 +128,7 @@ pub struct CreateTransactionRequest {
     pub notes: Option<String>,
     pub status: Option<TransactionStatus>,
     pub transfer_account_id: Option<String>,
+    pub parent_transaction_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +143,7 @@ pub struct UpdateTransactionRequest {
     pub payee: Option<String>,
     pub notes: Option<String>,
     pub status: Option<TransactionStatus>,
+    pub is_split: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

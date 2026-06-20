@@ -60,6 +60,7 @@ export interface CreateTransactionRequest {
   notes?: string;
   status?: TransactionStatus;
   transfer_account_id?: string;
+  parent_transaction_id?: string;
 }
 
 export interface TransactionFilter {
