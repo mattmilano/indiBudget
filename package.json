@@ -27,6 +27,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "chart.js": "^4.4.0",
     "date-fns": "^3.6.0",
+    "decimal.js": "^10.6.0",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
     "pinia": "^2.2.0",

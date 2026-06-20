@@ -8,6 +8,9 @@
  * - indiBudget fetches transactions directly from SimpleFIN
  *
  * This keeps bank credentials out of indiBudget entirely.
+ *
+ * Note: SimpleFIN config is stored in the backend database (not localStorage)
+ * for better security - the access token is not exposed to JavaScript.
  */
 
 import { fetch } from '@tauri-apps/plugin-http';
@@ -21,14 +24,14 @@ import type {
 } from '../types';
 import * as api from './api';
 
-const SIMPLEFIN_CONFIG_KEY = 'indibudget_simplefin_config';
+const SIMPLEFIN_CONFIG_KEY = 'simplefin_config';
 
 /**
- * Get the current SimpleFIN configuration from localStorage
+ * Get the current SimpleFIN configuration from secure backend storage
  */
-export function getConfig(): SimpleFINConfig {
+export async function getConfig(): Promise<SimpleFINConfig> {
   try {
-    const stored = localStorage.getItem(SIMPLEFIN_CONFIG_KEY);
+    const stored = await api.getSetting(SIMPLEFIN_CONFIG_KEY);
     if (stored) {
       return JSON.parse(stored);
     }
@@ -46,11 +49,11 @@ export function getConfig(): SimpleFINConfig {
 }
 
 /**
- * Save SimpleFIN configuration to localStorage
+ * Save SimpleFIN configuration to secure backend storage
  */
-export function saveConfig(config: SimpleFINConfig): void {
+export async function saveConfig(config: SimpleFINConfig): Promise<void> {
   try {
-    localStorage.setItem(SIMPLEFIN_CONFIG_KEY, JSON.stringify(config));
+    await api.setSetting(SIMPLEFIN_CONFIG_KEY, JSON.stringify(config));
   } catch (e) {
     console.error('Failed to save SimpleFIN config:', e);
   }
@@ -59,8 +62,12 @@ export function saveConfig(config: SimpleFINConfig): void {
 /**
  * Clear SimpleFIN configuration (disconnect)
  */
-export function clearConfig(): void {
-  localStorage.removeItem(SIMPLEFIN_CONFIG_KEY);
+export async function clearConfig(): Promise<void> {
+  try {
+    await api.deleteSetting(SIMPLEFIN_CONFIG_KEY);
+  } catch (e) {
+    console.error('Failed to clear SimpleFIN config:', e);
+  }
 }
 
 /**
@@ -263,9 +270,9 @@ export async function syncTransactions(
   }
 
   // Update last sync time
-  const config = getConfig();
+  const config = await getConfig();
   config.lastSync = new Date().toISOString();
-  saveConfig(config);
+  await saveConfig(config);
 
   onProgress?.('Sync complete!');
 

@@ -97,6 +97,10 @@ pub fn run() {
             commands::import_backup,
             commands::get_backup_info,
             commands::get_default_backup_path,
+            // App Settings (secure storage)
+            commands::get_setting,
+            commands::set_setting,
+            commands::delete_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

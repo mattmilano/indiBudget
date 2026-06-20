@@ -26,6 +26,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_006_CANCELLED_SUBSCRIPTIONS, 6),
         (MIGRATION_007_USER_CATEGORY_RULES, 7),
         (MIGRATION_008_DERIVED_BALANCES, 8),
+        (MIGRATION_009_APP_SETTINGS, 9),
     ];
 
     for (sql, version) in migrations {
@@ -228,4 +229,15 @@ const MIGRATION_008_DERIVED_BALANCES: &str = r#"
 
     -- Index to speed up balance computation (account + type for SUM queries)
     CREATE INDEX IF NOT EXISTS idx_transactions_balance ON transactions(account_id, transaction_type);
+"#;
+
+const MIGRATION_009_APP_SETTINGS: &str = r#"
+    -- App settings table for storing sensitive configuration
+    -- (SimpleFIN credentials, preferences, etc.) in the database
+    -- instead of localStorage for better security
+    CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
 "#;

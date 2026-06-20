@@ -1711,3 +1711,26 @@ pub fn get_default_backup_path() -> String {
         .to_string_lossy()
         .to_string()
 }
+
+// App Settings Commands (secure storage for sensitive config like SimpleFIN)
+
+#[tauri::command]
+pub fn get_setting(state: State<AppState>, key: String) -> Result<Option<String>, String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::get_setting(conn, &key))
+    })
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<AppState>, key: String, value: String) -> Result<(), String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::set_setting(conn, &key, &value))
+    })
+}
+
+#[tauri::command]
+pub fn delete_setting(state: State<AppState>, key: String) -> Result<(), String> {
+    with_db(&state, |db| {
+        db.with_connection(|conn| repository::delete_setting(conn, &key))
+    })
+}

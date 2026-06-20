@@ -219,6 +219,32 @@ export const getBackupInfo = (path: string) =>
 export const getDefaultBackupPath = () =>
   invoke<string>('get_default_backup_path');
 
+// App Settings (secure storage for sensitive config like SimpleFIN)
+export const getSetting = (key: string) =>
+  invoke<string | null>('get_setting', { key });
+
+export const setSetting = (key: string, value: string) =>
+  invoke<void>('set_setting', { key, value });
+
+export const deleteSetting = (key: string) =>
+  invoke<void>('delete_setting', { key });
+
+// Missing API wrappers for backend commands
+export const getBudget = (id: string) => invoke<Budget>('get_budget', { id });
+
+export const updateBudget = (request: Partial<Budget> & { id: string }) =>
+  invoke<Budget>('update_budget', { request });
+
+export const deleteBudget = (id: string) => invoke<void>('delete_budget', { id });
+
+export const getRecurringById = (id: string) =>
+  invoke<RecurringTransaction>('get_recurring_by_id', { id });
+
+export const updateRecurring = (request: Partial<RecurringTransaction> & { id: string }) =>
+  invoke<RecurringTransaction>('update_recurring', { request });
+
+export const getGoal = (id: string) => invoke<SavingsGoal>('get_goal', { id });
+
 // Split Transactions
 export const createSplitTransaction = async (
   parentTransactionId: string,

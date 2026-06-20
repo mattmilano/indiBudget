@@ -123,7 +123,7 @@ onMounted(async () => {
   await accountsStore.fetchAccounts();
 
   // Load SimpleFIN config
-  simplefinConfig.value = simplefin.getConfig();
+  simplefinConfig.value = await simplefin.getConfig();
 });
 
 const currencies = [
@@ -377,8 +377,14 @@ async function changeEncryptionPassword() {
   }
 }
 
-// SimpleFIN Integration State
-const simplefinConfig = ref<SimpleFINConfig>(simplefin.getConfig());
+// SimpleFIN Integration State - initialized empty, loaded asynchronously
+const simplefinConfig = ref<SimpleFINConfig>({
+  accessUrl: null,
+  lastSync: null,
+  autoSync: false,
+  syncInterval: 'manual',
+  accountMappings: [],
+});
 const simplefinAccessUrl = ref('');
 const simplefinMessage = ref('');
 const simplefinError = ref('');
@@ -435,7 +441,7 @@ async function testSimplefinConnection() {
         accessUrl: simplefinAccessUrl.value,
         accountMappings: mappings,
       };
-      simplefin.saveConfig(simplefinConfig.value);
+      await simplefin.saveConfig(simplefinConfig.value);
 
       // Show account mapping modal
       showAccountMapping.value = true;
@@ -490,7 +496,7 @@ async function syncSimplefin() {
     }
 
     // Update last sync in config
-    simplefinConfig.value = simplefin.getConfig();
+    simplefinConfig.value = await simplefin.getConfig();
   } catch (e) {
     simplefinError.value = e instanceof Error ? e.message : 'Sync failed.';
   } finally {
@@ -499,18 +505,22 @@ async function syncSimplefin() {
   }
 }
 
-function updateAccountMapping(simplefinAccountId: string, indibudgetAccountId: string | null) {
+async function updateAccountMapping(simplefinAccountId: string, indibudgetAccountId: string | null) {
   const mapping = simplefinConfig.value.accountMappings.find(m => m.simplefinAccountId === simplefinAccountId);
   if (mapping) {
     mapping.indibudgetAccountId = indibudgetAccountId;
-    simplefin.saveConfig(simplefinConfig.value);
+    await simplefin.saveConfig(simplefinConfig.value);
   }
 }
 
-function disconnectSimplefin() {
+async function saveSimplefinConfig() {
+  await simplefin.saveConfig(simplefinConfig.value);
+}
+
+async function disconnectSimplefin() {
   if (confirm('Are you sure you want to disconnect SimpleFIN? Your imported transactions will remain.')) {
-    simplefin.clearConfig();
-    simplefinConfig.value = simplefin.getConfig();
+    await simplefin.clearConfig();
+    simplefinConfig.value = await simplefin.getConfig();
     simplefinAccessUrl.value = '';
     simplefinAccounts.value = [];
     showAccountMapping.value = false;
@@ -1107,7 +1117,7 @@ function formatLastSync(dateStr: string | null): string {
                     v-model="simplefinConfig.autoSync"
                     type="checkbox"
                     class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
-                    @change="simplefin.saveConfig(simplefinConfig)"
+                    @change="saveSimplefinConfig"
                   />
                 </div>
                 <div v-if="simplefinConfig.autoSync" class="flex items-center gap-3">
@@ -1115,7 +1125,7 @@ function formatLastSync(dateStr: string | null): string {
                   <select
                     v-model="simplefinConfig.syncInterval"
                     class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    @change="simplefin.saveConfig(simplefinConfig)"
+                    @change="saveSimplefinConfig"
                   >
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>

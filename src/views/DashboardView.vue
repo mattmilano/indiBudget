@@ -3,6 +3,7 @@ import { onMounted, computed, ref } from 'vue';
 import { useAccountsStore, useTransactionsStore, useBudgetsStore, useCalendarStore, useCategoriesStore } from '../stores';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useRouter } from 'vue-router';
+import { parseMoney, sumMoney, percentage, toNumber } from '../utils/money';
 
 const router = useRouter();
 const accountsStore = useAccountsStore();
@@ -30,27 +31,30 @@ onMounted(async () => {
 });
 
 const formatCurrency = (value: number | string) => {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
+  const num = toNumber(parseMoney(value));
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 };
 
+// Monthly calculations using decimal.js for precision
 const monthlyIncome = computed(() => {
-  return transactionsStore.transactions
+  const incomeAmounts = transactionsStore.transactions
     .filter(t => t.transaction_type === 'income')
-    .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    .map(t => t.amount);
+  return toNumber(sumMoney(incomeAmounts));
 });
 
 const monthlyExpenses = computed(() => {
-  return transactionsStore.transactions
+  const expenseAmounts = transactionsStore.transactions
     .filter(t => t.transaction_type === 'expense')
-    .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    .map(t => t.amount);
+  return toNumber(sumMoney(expenseAmounts));
 });
 
 const netSavings = computed(() => monthlyIncome.value - monthlyExpenses.value);
 
 const savingsRate = computed(() => {
   if (monthlyIncome.value === 0) return 0;
-  return ((monthlyIncome.value - monthlyExpenses.value) / monthlyIncome.value) * 100;
+  return toNumber(percentage(netSavings.value, monthlyIncome.value));
 });
 
 // Top spending categories

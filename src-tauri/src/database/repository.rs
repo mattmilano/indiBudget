@@ -1083,3 +1083,35 @@ pub fn delete_user_category_rule(conn: &Connection, rule_id: &str) -> DbResult<b
     )?;
     Ok(affected > 0)
 }
+
+// App Settings Repository
+
+/// Get a setting value by key
+pub fn get_setting(conn: &Connection, key: &str) -> DbResult<Option<String>> {
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        [key],
+        |row| row.get(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        _ => Err(DatabaseError::Sqlite(e)),
+    })
+}
+
+/// Set a setting value (upsert)
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> DbResult<()> {
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = ?3",
+        params![key, value, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+/// Delete a setting
+pub fn delete_setting(conn: &Connection, key: &str) -> DbResult<()> {
+    conn.execute("DELETE FROM app_settings WHERE key = ?1", [key])?;
+    Ok(())
+}

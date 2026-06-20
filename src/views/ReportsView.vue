@@ -19,6 +19,7 @@ import * as api from '../services/api';
 import { useAccountsStore } from '../stores';
 import type { SpendingByCategory, MonthlyTrend, CashFlowReport } from '../types';
 import { format, subMonths, subYears, startOfMonth, endOfMonth } from 'date-fns';
+import { parseMoney, sumMoney, percentage, toNumber } from '../utils/money';
 
 ChartJS.register(
   ArcElement,
@@ -108,19 +109,19 @@ const lastYearPeriodDates = computed(() => {
 });
 
 const formatCurrency = (value: string | number) => {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num || 0);
+  const num = toNumber(parseMoney(value));
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 };
 
-// Net worth breakdown
+// Net worth breakdown - using decimal.js for precise money arithmetic
 const netWorthBreakdown = computed(() => {
-  const assets = accountsStore.accounts
-    .filter(a => ['checking', 'savings', 'cash', 'investment'].includes(a.account_type))
-    .reduce((sum, a) => sum + parseFloat(a.balance || '0'), 0);
+  const assetsAccounts = accountsStore.accounts
+    .filter(a => ['checking', 'savings', 'cash', 'investment'].includes(a.account_type));
+  const assets = toNumber(sumMoney(assetsAccounts.map(a => a.balance || '0')));
 
-  const liabilities = accountsStore.accounts
-    .filter(a => ['credit_card', 'loan'].includes(a.account_type))
-    .reduce((sum, a) => sum + parseFloat(a.balance || '0'), 0);
+  const liabilityAccounts = accountsStore.accounts
+    .filter(a => ['credit_card', 'loan'].includes(a.account_type));
+  const liabilities = toNumber(sumMoney(liabilityAccounts.map(a => a.balance || '0')));
 
   return {
     assets,
@@ -129,20 +130,20 @@ const netWorthBreakdown = computed(() => {
   };
 });
 
-// Year-over-year comparison
+// Year-over-year comparison - using decimal.js for precise calculations
 const yoyComparison = computed(() => {
   if (!cashFlowReport.value || !lastYearCashFlow.value) return null;
 
-  const currentExpenses = parseFloat(cashFlowReport.value.total_expenses) || 0;
-  const lastYearExpenses = parseFloat(lastYearCashFlow.value.total_expenses) || 0;
-  const currentIncome = parseFloat(cashFlowReport.value.total_income) || 0;
-  const lastYearIncome = parseFloat(lastYearCashFlow.value.total_income) || 0;
+  const currentExpenses = toNumber(parseMoney(cashFlowReport.value.total_expenses));
+  const lastYearExpenses = toNumber(parseMoney(lastYearCashFlow.value.total_expenses));
+  const currentIncome = toNumber(parseMoney(cashFlowReport.value.total_income));
+  const lastYearIncome = toNumber(parseMoney(lastYearCashFlow.value.total_income));
 
   const expenseChange = lastYearExpenses > 0
-    ? ((currentExpenses - lastYearExpenses) / lastYearExpenses) * 100
+    ? toNumber(percentage(currentExpenses - lastYearExpenses, lastYearExpenses))
     : 0;
   const incomeChange = lastYearIncome > 0
-    ? ((currentIncome - lastYearIncome) / lastYearIncome) * 100
+    ? toNumber(percentage(currentIncome - lastYearIncome, lastYearIncome))
     : 0;
 
   return {
