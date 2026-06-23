@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name={{name}}
-Comment={{comment}}
+Name=indiBudget
+Comment=Personal budget application with calendar-focused expense tracking
 Exec={{exec}}
 Icon={{icon}}
 Terminal=false
 Type=Application
 Categories=Office;Finance;
-StartupWMClass={{name}}
+StartupWMClass=indiBudget
