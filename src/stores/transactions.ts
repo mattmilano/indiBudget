@@ -37,9 +37,7 @@ export const useTransactionsStore = defineStore('transactions', () => {
     loading.value = true;
     error.value = null;
     try {
-      console.log('Fetching transactions with filter:', JSON.stringify(filter.value));
       const result = await api.getTransactions(filter.value);
-      console.log('Fetched transactions count:', result.length);
       transactions.value = result;
     } catch (e) {
       console.error('Failed to fetch transactions:', e);

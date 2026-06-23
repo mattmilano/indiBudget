@@ -20,7 +20,6 @@ app.use(router);
 // This ensures all components can fetch data in their onMounted hooks
 initApp()
   .then(() => {
-    console.log('Database initialized');
     app.mount('#app');
   })
   .catch((err) => {

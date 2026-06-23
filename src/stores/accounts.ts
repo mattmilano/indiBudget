@@ -31,7 +31,6 @@ export const useAccountsStore = defineStore('accounts', () => {
     error.value = null;
     try {
       const result = await api.getAccounts();
-      console.log('Fetched accounts count:', result.length, result.map(a => a.name));
       accounts.value = result;
     } catch (e) {
       console.error('Failed to fetch accounts:', e);
