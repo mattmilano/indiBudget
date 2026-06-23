@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "enableGtkAppId": true,
     "windows": [
       {
         "title": "indiBudget",
