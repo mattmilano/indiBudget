@@ -3,6 +3,8 @@ import { ref, computed } from 'vue';
 import type { Budget, CreateBudgetRequest, BudgetStatus } from '../types';
 import * as api from '../services/api';
 
+type UpdateBudgetPayload = Partial<Budget> & { id: string };
+
 export const useBudgetsStore = defineStore('budgets', () => {
   const budgets = ref<Budget[]>([]);
   const budgetStatus = ref<BudgetStatus[]>([]);
@@ -67,6 +69,40 @@ export const useBudgetsStore = defineStore('budgets', () => {
     }
   }
 
+  async function updateBudget(request: UpdateBudgetPayload) {
+    loading.value = true;
+    error.value = null;
+    try {
+      const budget = await api.updateBudget(request);
+      const index = budgets.value.findIndex(b => b.id === budget.id);
+      if (index !== -1) {
+        budgets.value[index] = budget;
+      }
+      await fetchBudgetStatus();
+      return budget;
+    } catch (e) {
+      error.value = String(e);
+      throw e;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function deleteBudget(id: string) {
+    loading.value = true;
+    error.value = null;
+    try {
+      await api.deleteBudget(id);
+      budgets.value = budgets.value.filter(b => b.id !== id);
+      await fetchBudgetStatus();
+    } catch (e) {
+      error.value = String(e);
+      throw e;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     budgets,
     budgetStatus,
@@ -79,5 +115,7 @@ export const useBudgetsStore = defineStore('budgets', () => {
     fetchBudgets,
     fetchBudgetStatus,
     createBudget,
+    updateBudget,
+    deleteBudget,
   };
 });

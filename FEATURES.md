@@ -25,10 +25,12 @@
 - **Five budget periods:** Weekly, Bi-weekly, Monthly, Quarterly, Yearly
 - Visual progress bars with over-budget warnings
 - Optional **rollover** of unused budget to the next period
+- Full **create, edit, and delete** for every budget
 - **Budget templates:** 50/30/20 Rule, Zero-Based, Minimalist, and Family Budget — with live preview
 
 ## Smart Categorization
 - **35+ built-in categories**, fully color-coded, plus unlimited custom categories
+- **Subcategories** — organize categories into parent/child groups
 - **Intelligent auto-categorization engine** recognizing hundreds of real-world merchants
 - **Priority-based matching** with support for text and regex rules
 - **Auto-categorize on import** and one-click categorization of existing transactions

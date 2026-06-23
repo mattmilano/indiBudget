@@ -477,7 +477,12 @@ pub fn update_category(
                 category.icon = Some(icon);
             }
             if let Some(parent_id) = request.parent_id {
-                category.parent_id = Some(parent_id);
+                // An empty string clears the parent (un-nests the category)
+                category.parent_id = if parent_id.is_empty() {
+                    None
+                } else {
+                    Some(parent_id)
+                };
             }
             if let Some(is_active) = request.is_active {
                 category.is_active = is_active;

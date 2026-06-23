@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useBudgetsStore, useCategoriesStore } from '../stores';
-import type { CreateBudgetRequest, BudgetPeriod } from '../types';
+import type { CreateBudgetRequest, BudgetPeriod, BudgetStatus } from '../types';
 import { format, startOfMonth } from 'date-fns';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 
 const budgetsStore = useBudgetsStore();
 const categoriesStore = useCategoriesStore();
 
 const showAddModal = ref(false);
+const showEditModal = ref(false);
 const showTemplateModal = ref(false);
+const showDeleteConfirm = ref(false);
 const applyingTemplate = ref(false);
 const monthlyIncome = ref('5000');
 
@@ -20,6 +23,19 @@ const newBudget = ref<CreateBudgetRequest>({
   start_date: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
   rollover: false,
 });
+
+// Budget being edited (a budget's category is fixed once created)
+const editingBudget = ref<BudgetStatus | null>(null);
+const editForm = ref({
+  name: '',
+  amount: '',
+  period: 'monthly' as BudgetPeriod,
+  start_date: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+  rollover: false,
+});
+
+// Budget pending deletion
+const budgetToDelete = ref<BudgetStatus | null>(null);
 
 const periodOptions: { value: BudgetPeriod; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
@@ -190,6 +206,54 @@ function resetForm() {
   };
 }
 
+function openEditModal(status: BudgetStatus) {
+  editingBudget.value = status;
+  editForm.value = {
+    name: status.budget.name,
+    amount: status.budget.amount,
+    period: status.budget.period,
+    start_date: status.budget.start_date,
+    rollover: status.budget.rollover,
+  };
+  showEditModal.value = true;
+}
+
+async function handleEditSubmit() {
+  if (!editingBudget.value) return;
+  try {
+    await budgetsStore.updateBudget({
+      id: editingBudget.value.budget.id,
+      name: editForm.value.name,
+      amount: editForm.value.amount,
+      period: editForm.value.period,
+      start_date: editForm.value.start_date,
+      rollover: editForm.value.rollover,
+    });
+    showEditModal.value = false;
+    editingBudget.value = null;
+  } catch (e) {
+    console.error('Failed to update budget:', e);
+    alert('Failed to update budget. Please try again.');
+  }
+}
+
+function confirmDelete(status: BudgetStatus) {
+  budgetToDelete.value = status;
+  showDeleteConfirm.value = true;
+}
+
+async function handleDeleteBudget() {
+  if (!budgetToDelete.value) return;
+  try {
+    await budgetsStore.deleteBudget(budgetToDelete.value.budget.id);
+    showDeleteConfirm.value = false;
+    budgetToDelete.value = null;
+  } catch (e) {
+    console.error('Failed to delete budget:', e);
+    alert('Failed to delete budget. Please try again.');
+  }
+}
+
 onMounted(async () => {
   await Promise.all([categoriesStore.fetchCategories(), budgetsStore.fetchBudgetStatus()]);
 });
@@ -261,30 +325,52 @@ onMounted(async () => {
               :style="{ backgroundColor: status.category_color }"
             />
             <div>
-              <h3 class="font-semibold text-gray-900 dark:text-white">{{ status.category_name }}</h3>
+              <h3 class="font-semibold text-gray-900 dark:text-white">{{ status.budget.name }}</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 capitalize">
-                {{ status.budget.period }} · {{ status.period_start }} to {{ status.period_end }}
+                {{ status.category_name }} · {{ status.budget.period }} · {{ status.period_start }} to {{ status.period_end }}
               </p>
             </div>
           </div>
-          <div class="text-right">
-            <p
-              :class="[
-                'text-lg font-bold',
-                status.is_over_budget ? 'text-red-600' : 'text-gray-900 dark:text-white'
-              ]"
-            >
-              {{ formatCurrency(status.spent) }} / {{ formatCurrency(status.budget.amount) }}
-            </p>
-            <p
-              :class="[
-                'text-sm',
-                status.is_over_budget ? 'text-red-500' : 'text-green-500'
-              ]"
-            >
-              {{ status.is_over_budget ? 'Over by' : 'Remaining:' }}
-              {{ formatCurrency(Math.abs(parseFloat(status.remaining))) }}
-            </p>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <p
+                :class="[
+                  'text-lg font-bold',
+                  status.is_over_budget ? 'text-red-600' : 'text-gray-900 dark:text-white'
+                ]"
+              >
+                {{ formatCurrency(status.spent) }} / {{ formatCurrency(status.budget.amount) }}
+              </p>
+              <p
+                :class="[
+                  'text-sm',
+                  status.is_over_budget ? 'text-red-500' : 'text-green-500'
+                ]"
+              >
+                {{ status.is_over_budget ? 'Over by' : 'Remaining:' }}
+                {{ formatCurrency(Math.abs(parseFloat(status.remaining))) }}
+              </p>
+            </div>
+            <div class="flex gap-1">
+              <button
+                @click="openEditModal(status)"
+                class="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                title="Edit budget"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button
+                @click="confirmDelete(status)"
+                class="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                title="Delete budget"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
@@ -406,6 +492,102 @@ onMounted(async () => {
         </form>
       </div>
     </div>
+
+    <!-- Edit Budget Modal -->
+    <div
+      v-if="showEditModal && editingBudget"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="showEditModal = false"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Edit Budget</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ editingBudget.category_name }}</p>
+        </div>
+        <form @submit.prevent="handleEditSubmit" class="p-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Budget Name</label>
+            <input
+              v-model="editForm.name"
+              type="text"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount</label>
+            <input
+              v-model="editForm.amount"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Period</label>
+            <select
+              v-model="editForm.period"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option v-for="period in periodOptions" :key="period.value" :value="period.value">
+                {{ period.label }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+            <input
+              v-model="editForm.start_date"
+              type="date"
+              required
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="editForm.rollover"
+              type="checkbox"
+              id="edit-rollover"
+              class="rounded border-gray-300 dark:border-gray-600"
+            />
+            <label for="edit-rollover" class="text-sm text-gray-700 dark:text-gray-300">
+              Roll over unused budget to next period
+            </label>
+          </div>
+          <div class="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              @click="showEditModal = false"
+              class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation -->
+    <ConfirmDialog
+      :show="showDeleteConfirm"
+      title="Delete Budget"
+      :message="`Are you sure you want to delete the '${budgetToDelete?.budget.name}' budget? This action cannot be undone.`"
+      confirm-text="Delete"
+      cancel-text="Cancel"
+      variant="danger"
+      @confirm="handleDeleteBudget"
+      @cancel="showDeleteConfirm = false; budgetToDelete = null"
+      @update:show="showDeleteConfirm = $event"
+    />
 
     <!-- Budget Template Modal -->
     <div

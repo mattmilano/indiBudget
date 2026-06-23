@@ -18,12 +18,14 @@ const newCategory = ref<CreateCategoryRequest>({
   category_type: 'expense',
   color: '#3b82f6',
   icon: undefined,
+  parent_id: undefined,
 });
 
 const editForm = ref({
   name: '',
   color: '#3b82f6',
   icon: '',
+  parent_id: '',
 });
 
 // Preset colors for easy selection
@@ -46,15 +48,31 @@ const presetColors = [
   '#6b7280', // gray
 ];
 
-// Filter categories by type
-const displayedCategories = computed(() => {
+// Categories of the active tab, sorted (system first, then alphabetical)
+const tabCategories = computed(() => {
   return categoriesStore.categories
     .filter(c => c.category_type === activeTab.value && c.is_active)
     .sort((a, b) => {
-      // System categories first, then alphabetical
       if (a.is_system !== b.is_system) return a.is_system ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
+});
+
+// Top-level categories (no parent) for the active tab
+const topLevelCategories = computed(() => {
+  return tabCategories.value.filter(c => !c.parent_id);
+});
+
+// Get the subcategories of a given parent
+function childrenOf(parentId: string): Category[] {
+  return tabCategories.value.filter(c => c.parent_id === parentId);
+}
+
+// Categories eligible to be a parent: same type, top-level only (one level
+// of nesting), and excluding the category currently being edited.
+const availableParents = computed(() => {
+  const excludeId = editingCategory.value?.id;
+  return tabCategories.value.filter(c => !c.parent_id && c.id !== excludeId);
 });
 
 // User-created categories only
@@ -83,6 +101,7 @@ function resetForm() {
     category_type: activeTab.value,
     color: '#3b82f6',
     icon: undefined,
+    parent_id: undefined,
   };
 }
 
@@ -96,6 +115,7 @@ function openEditModal(category: Category) {
     name: category.name,
     color: category.color,
     icon: category.icon || '',
+    parent_id: category.parent_id || '',
   };
   showEditModal.value = true;
 }
@@ -111,6 +131,8 @@ async function handleEditSubmit() {
       name: editForm.value.name,
       color: editForm.value.color,
       icon: editForm.value.icon || undefined,
+      // Empty string clears the parent (backend treats "" as None)
+      parent_id: editForm.value.parent_id,
     });
     await categoriesStore.fetchCategories();
     showEditModal.value = false;
@@ -214,10 +236,10 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Categories Grid -->
-    <div v-if="displayedCategories.length > 0" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <!-- Categories Grid (top-level cards with nested subcategories) -->
+    <div v-if="tabCategories.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div
-        v-for="category in displayedCategories"
+        v-for="category in topLevelCategories"
         :key="category.id"
         class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md transition-shadow"
       >
@@ -244,6 +266,12 @@ onMounted(() => {
                 >
                   Custom
                 </span>
+                <span
+                  v-if="childrenOf(category.id).length > 0"
+                  class="px-1.5 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"
+                >
+                  {{ childrenOf(category.id).length }} sub
+                </span>
               </div>
             </div>
           </div>
@@ -266,6 +294,49 @@ onMounted(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
+          </div>
+        </div>
+
+        <!-- Subcategories -->
+        <div
+          v-if="childrenOf(category.id).length > 0"
+          class="mt-3 pl-3 border-l-2 border-gray-100 dark:border-gray-700 space-y-2"
+        >
+          <div
+            v-for="child in childrenOf(category.id)"
+            :key="child.id"
+            class="flex items-center justify-between group"
+          >
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: child.color }"></div>
+              <span class="text-sm text-gray-700 dark:text-gray-300">{{ child.name }}</span>
+              <span
+                v-if="!child.is_system"
+                class="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded"
+              >
+                Custom
+              </span>
+            </div>
+            <div v-if="!child.is_system" class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                @click="openEditModal(child)"
+                class="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                title="Edit category"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button
+                @click="confirmDelete(child)"
+                class="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                title="Delete category"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -313,6 +384,23 @@ onMounted(() => {
               placeholder="e.g., Subscriptions"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Parent Category <span class="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <select
+              v-model="newCategory.parent_id"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option :value="undefined">None (top-level category)</option>
+              <option v-for="parent in availableParents" :key="parent.id" :value="parent.id">
+                {{ parent.name }}
+              </option>
+            </select>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Make this a subcategory of an existing {{ activeTab }} category.
+            </p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color</label>
@@ -386,6 +474,20 @@ onMounted(() => {
               required
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Parent Category <span class="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <select
+              v-model="editForm.parent_id"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">None (top-level category)</option>
+              <option v-for="parent in availableParents" :key="parent.id" :value="parent.id">
+                {{ parent.name }}
+              </option>
+            </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color</label>
