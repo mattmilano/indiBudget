@@ -1,0 +1,730 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+import Icon from '@components/Icon.astro';
+---
+
+<BaseLayout title="indiBudget Documentation — Complete User Guide" description="Complete documentation for indiBudget, the privacy-focused personal finance application. Covers accounts, transactions, budgets, goals, reports, and more.">
+
+  <section class="hero" style="padding-bottom:60px;">
+    <div class="hero-inner hero-centered">
+      <h1>indiBudget <em>Documentation</em></h1>
+      <p class="hero-sub">Complete user guide for indiBudget — privacy-focused personal finance for Linux, macOS, and Windows.</p>
+    </div>
+  </section>
+
+  <section class="section section-light">
+    <div class="section-inner" style="max-width:52rem;">
+
+      <!-- ============================== -->
+      <!-- TABLE OF CONTENTS              -->
+      <!-- ============================== -->
+
+      <nav class="doc-toc" id="top">
+        <h2 style="margin-top:0;">Contents</h2>
+        <ol class="toc-list">
+          <li><a href="#getting-started">Getting Started</a></li>
+          <li><a href="#interface">The Interface</a></li>
+          <li><a href="#dashboard">Dashboard</a></li>
+          <li><a href="#accounts">Accounts &amp; Net Worth</a></li>
+          <li><a href="#transactions">Transactions</a></li>
+          <li><a href="#calendar">Bill Calendar</a></li>
+          <li><a href="#budgets">Budgets</a></li>
+          <li><a href="#categories">Categories</a></li>
+          <li><a href="#payees">Payees</a></li>
+          <li><a href="#goals">Savings Goals</a></li>
+          <li><a href="#recurring">Recurring Transactions</a></li>
+          <li><a href="#reports">Reports &amp; Analytics</a></li>
+          <li><a href="#import">Import</a></li>
+          <li><a href="#simplefin">Bank Sync (SimpleFIN)</a></li>
+          <li><a href="#backup">Backup &amp; Restore</a></li>
+          <li><a href="#encryption">Security &amp; Encryption</a></li>
+          <li><a href="#settings">Settings</a></li>
+          <li><a href="#shortcuts">Keyboard Shortcuts</a></li>
+          <li><a href="#installation">Installation</a></li>
+          <li><a href="#troubleshooting">Troubleshooting</a></li>
+        </ol>
+      </nav>
+
+      <!-- ============================== -->
+      <!-- GETTING STARTED                -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="getting-started">
+        <h2>1. Getting Started</h2>
+        <p>indiBudget is a privacy-focused personal finance application that runs entirely on your computer. All your financial data lives in a local SQLite database — no cloud account, no tracking, no subscription required.</p>
+        <p>When you first launch the app, you'll see an empty dashboard with quick-start prompts to guide you through setup.</p>
+        <h3>Recommended First Steps</h3>
+        <ol>
+          <li>Create your first account (checking, savings, credit card, etc.) from <strong>Accounts</strong>.</li>
+          <li>Add some transactions manually or import from your bank.</li>
+          <li>Set up budgets for your spending categories.</li>
+          <li>Create savings goals to track your progress.</li>
+        </ol>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- THE INTERFACE                  -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="interface">
+        <h2>2. The Interface</h2>
+        <p>The indiBudget window is organized into three areas:</p>
+        <ul>
+          <li><strong>Sidebar</strong> — Dark navigation panel on the left with links to all major sections. Can be collapsed to icons only.</li>
+          <li><strong>Main content</strong> — The primary workspace where lists, forms, charts, and dashboards render.</li>
+          <li><strong>Footer</strong> — Shows the app version.</li>
+        </ul>
+        <h3>Sidebar Navigation</h3>
+        <p>The sidebar contains links to: Dashboard, Calendar, Transactions, Accounts, Budgets, Categories, Payees, Goals, Recurring, Reports, Import, Settings, and About.</p>
+        <p>Click the collapse button (double chevron) to toggle between full sidebar and icon-only mode. Your preference is remembered across sessions.</p>
+        <h3>Theme Support</h3>
+        <p>indiBudget supports Light, Dark, and System themes. Change your theme in <strong>Settings</strong>.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- DASHBOARD                      -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="dashboard">
+        <h2>3. Dashboard</h2>
+        <p>The Dashboard provides an at-a-glance overview of your finances:</p>
+        <ul>
+          <li><strong>Net Worth</strong> — Total assets minus liabilities with 7-day and 30-day change indicators.</li>
+          <li><strong>Account Balances</strong> — Quick view of all your accounts.</li>
+          <li><strong>Budget Status</strong> — Visual progress bars for active budgets with over-budget warnings.</li>
+          <li><strong>Upcoming Bills</strong> — Recurring transactions due in the next 30 days.</li>
+          <li><strong>Recent Transactions</strong> — Your latest activity.</li>
+          <li><strong>Goal Progress</strong> — How close you are to reaching your savings goals.</li>
+        </ul>
+        <p>If you're new to the app, the Dashboard shows a welcome message with quick-start actions.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- ACCOUNTS                       -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="accounts">
+        <h2>4. Accounts &amp; Net Worth</h2>
+        <p>Manage your financial accounts from the <strong>Accounts</strong> page.</p>
+        <h3>Account Types</h3>
+        <ul>
+          <li><strong>Checking</strong> — Primary spending accounts</li>
+          <li><strong>Savings</strong> — Savings and money market accounts</li>
+          <li><strong>Credit Card</strong> — Credit cards (tracked as liabilities)</li>
+          <li><strong>Cash</strong> — Physical cash or petty cash</li>
+          <li><strong>Investment</strong> — Brokerage, retirement accounts</li>
+          <li><strong>Loan</strong> — Mortgages, auto loans, personal loans (tracked as liabilities)</li>
+          <li><strong>Other</strong> — Any account that doesn't fit above</li>
+        </ul>
+        <h3>Account Information</h3>
+        <ul>
+          <li><strong>Name</strong> — Display name for the account</li>
+          <li><strong>Starting Balance</strong> — Balance when you begin tracking (current balance is derived from transactions)</li>
+          <li><strong>Currency</strong> — Supports 12 currencies (USD, EUR, GBP, JPY, CAD, AUD, CHF, CNY, INR, MXN, BRL, KRW)</li>
+          <li><strong>Institution</strong> — Bank or financial institution name</li>
+          <li><strong>Account Number</strong> — Last 4 digits only, for identification</li>
+        </ul>
+        <h3>Net Worth Calculation</h3>
+        <p>Net Worth = Assets (Checking + Savings + Cash + Investment) − Liabilities (Credit Cards + Loans)</p>
+        <p>Balances are always derived from the starting balance plus all transactions — no manual balance entry required.</p>
+        <h3>Account Transfers</h3>
+        <p>Transfer money between accounts using the <strong>Transfer</strong> button. Transfers create linked transactions in both accounts that stay in sync.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- TRANSACTIONS                   -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="transactions">
+        <h2>5. Transactions</h2>
+        <p>View and manage all transactions from the <strong>Transactions</strong> page.</p>
+        <h3>Transaction Types</h3>
+        <ul>
+          <li><strong>Income</strong> — Money coming in (salary, freelance, dividends, etc.)</li>
+          <li><strong>Expense</strong> — Money going out (purchases, bills, etc.)</li>
+          <li><strong>Transfer</strong> — Moving money between your own accounts</li>
+        </ul>
+        <h3>Transaction Fields</h3>
+        <ul>
+          <li><strong>Date</strong> — When the transaction occurred</li>
+          <li><strong>Description</strong> — What the transaction was for</li>
+          <li><strong>Amount</strong> — Transaction amount</li>
+          <li><strong>Category</strong> — Classification for budgeting and reports</li>
+          <li><strong>Payee</strong> — Who you paid or received money from</li>
+          <li><strong>Notes</strong> — Additional details</li>
+          <li><strong>Status</strong> — Pending, Cleared, Reconciled, or Void</li>
+        </ul>
+        <h3>Transaction Status Workflow</h3>
+        <ul>
+          <li><strong>Pending</strong> — Transaction hasn't cleared yet</li>
+          <li><strong>Cleared</strong> — Transaction has posted to your account</li>
+          <li><strong>Reconciled</strong> — Verified against a bank statement</li>
+          <li><strong>Void</strong> — Cancelled transaction (preserved for records)</li>
+        </ul>
+        <h3>Filtering &amp; Search</h3>
+        <p>Filter transactions by account, category, type, date range, or use full-text search. Date presets include This Month, Last Month, This Year, Last 30 Days, and more.</p>
+        <h3>Split Transactions</h3>
+        <p>Divide a single transaction across multiple categories — useful for receipts that include items from different spending categories.</p>
+        <h3>CSV Export</h3>
+        <p>Export any filtered set of transactions to CSV for use in spreadsheets or other applications.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- CALENDAR                       -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="calendar">
+        <h2>6. Bill Calendar</h2>
+        <p>The <strong>Calendar</strong> page provides a visual overview of your financial activity.</p>
+        <h3>Calendar Views</h3>
+        <ul>
+          <li><strong>Month View</strong> — Traditional calendar grid showing transactions and bills on each day</li>
+          <li><strong>List View</strong> — Chronological list of events</li>
+        </ul>
+        <h3>Calendar Modes</h3>
+        <ul>
+          <li><strong>Transactions</strong> — Shows actual recorded transactions</li>
+          <li><strong>Upcoming Bills</strong> — Shows scheduled recurring transactions</li>
+        </ul>
+        <h3>Features</h3>
+        <ul>
+          <li>Daily summaries showing total bills and deposits</li>
+          <li>Monthly income and expense totals</li>
+          <li>30-day upcoming bills sidebar</li>
+          <li>Color-coded by category</li>
+        </ul>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- BUDGETS                        -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="budgets">
+        <h2>7. Budgets</h2>
+        <p>Create and track spending budgets from the <strong>Budgets</strong> page.</p>
+        <h3>Creating a Budget</h3>
+        <ol>
+          <li>Click <strong>Create Budget</strong></li>
+          <li>Select a category to track</li>
+          <li>Set the budget amount</li>
+          <li>Choose a period (Weekly, Bi-weekly, Monthly, Quarterly, or Yearly)</li>
+          <li>Set the start date</li>
+          <li>Optionally enable rollover</li>
+        </ol>
+        <h3>Budget Periods</h3>
+        <ul>
+          <li><strong>Weekly</strong> — Resets every 7 days</li>
+          <li><strong>Bi-weekly</strong> — Resets every 14 days</li>
+          <li><strong>Monthly</strong> — Resets on the same day each month</li>
+          <li><strong>Quarterly</strong> — Resets every 3 months</li>
+          <li><strong>Yearly</strong> — Resets annually</li>
+        </ul>
+        <h3>Rollover</h3>
+        <p>When enabled, unused budget from one period carries over to the next. Over-budget amounts also roll over as a deficit.</p>
+        <h3>Budget Templates</h3>
+        <p>Quick-start with pre-built templates:</p>
+        <ul>
+          <li><strong>50/30/20 Rule</strong> — 50% needs, 30% wants, 20% savings</li>
+          <li><strong>Zero-Based</strong> — Every dollar assigned a job</li>
+          <li><strong>Minimalist</strong> — Essential categories only</li>
+          <li><strong>Family Budget</strong> — Common household categories</li>
+        </ul>
+        <h3>Visual Progress</h3>
+        <p>Each budget displays a progress bar showing spending against the limit. Over-budget items are highlighted in red.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- CATEGORIES                     -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="categories">
+        <h2>8. Categories</h2>
+        <p>Manage spending and income categories from the <strong>Categories</strong> page.</p>
+        <h3>Built-in Categories</h3>
+        <p>indiBudget includes 35+ pre-configured categories covering common income and expense types:</p>
+        <ul>
+          <li><strong>Income:</strong> Salary, Freelance, Investment Income, Other Income</li>
+          <li><strong>Housing:</strong> Housing/Rent, Mortgage, Utilities</li>
+          <li><strong>Food:</strong> Groceries, Dining Out, Coffee &amp; Cafes</li>
+          <li><strong>Transportation:</strong> Transportation, Gas &amp; Fuel, Rideshare</li>
+          <li><strong>Subscriptions:</strong> Streaming Services, Music, Gaming, Apps &amp; Software, News</li>
+          <li>And many more...</li>
+        </ul>
+        <h3>Custom Categories</h3>
+        <p>Create your own categories with custom names and colors. Categories can be either Income or Expense type.</p>
+        <h3>Subcategories</h3>
+        <p>Organize categories into parent/child groups. When creating or editing a category, select a parent category to nest it underneath.</p>
+        <h3>Auto-Categorization</h3>
+        <p>indiBudget includes an intelligent auto-categorization engine that recognizes hundreds of real-world merchants. Create custom rules based on payee name or description patterns (text or regex) with priority-based matching.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- PAYEES                         -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="payees">
+        <h2>9. Payees</h2>
+        <p>View spending patterns by merchant from the <strong>Payees</strong> page.</p>
+        <ul>
+          <li>See total spending per payee</li>
+          <li>View transaction count and average amount</li>
+          <li>Identify your most frequent merchants</li>
+          <li>Track spending trends over time</li>
+        </ul>
+        <p>Payees are automatically extracted from your transactions — no manual setup required.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- GOALS                          -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="goals">
+        <h2>10. Savings Goals</h2>
+        <p>Track progress toward financial goals from the <strong>Goals</strong> page.</p>
+        <h3>Goal Types</h3>
+        <ul>
+          <li><strong>Savings</strong> — General savings target</li>
+          <li><strong>Debt Payoff</strong> — Track paying down a debt</li>
+          <li><strong>Purchase</strong> — Save for a specific item</li>
+          <li><strong>Emergency Fund</strong> — Build your safety net</li>
+          <li><strong>Custom</strong> — Any other goal</li>
+        </ul>
+        <h3>Goal Fields</h3>
+        <ul>
+          <li><strong>Name</strong> — What you're saving for</li>
+          <li><strong>Target Amount</strong> — How much you need</li>
+          <li><strong>Current Amount</strong> — How much you've saved so far</li>
+          <li><strong>Target Date</strong> — When you want to reach the goal (optional)</li>
+          <li><strong>Linked Account</strong> — Track an account balance as goal progress (optional)</li>
+          <li><strong>Color</strong> — Visual identifier</li>
+          <li><strong>Notes</strong> — Additional details</li>
+        </ul>
+        <h3>Monthly-Needed Calculator</h3>
+        <p>For time-based goals, indiBudget calculates how much you need to save each month to stay on track.</p>
+        <h3>Quick Contributions</h3>
+        <p>Use the quick-fill buttons to log contributions toward your goal.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- RECURRING                      -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="recurring">
+        <h2>11. Recurring Transactions</h2>
+        <p>Track bills and regular income from the <strong>Recurring</strong> page.</p>
+        <h3>Setting Up Recurring Transactions</h3>
+        <ol>
+          <li>Click <strong>Add Recurring</strong></li>
+          <li>Select an account and transaction type (income/expense)</li>
+          <li>Enter amount, description, category, and payee</li>
+          <li>Choose frequency: Daily, Weekly, Bi-weekly, Monthly, Quarterly, or Yearly</li>
+          <li>Set the start date and optional end date</li>
+          <li>Configure reminder days before due date</li>
+        </ol>
+        <h3>Auto-Detection</h3>
+        <p>indiBudget can automatically detect recurring patterns in your transaction history. Each detected pattern includes a confidence score to help you decide which to track.</p>
+        <h3>Subscription Management</h3>
+        <p>Mark recurring transactions as cancelled to track your savings. The app calculates estimated yearly savings from cancelled subscriptions.</p>
+        <h3>Notifications</h3>
+        <p>Receive native OS notifications when bills are coming due. Configure the reminder window in Settings.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- REPORTS                        -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="reports">
+        <h2>12. Reports &amp; Analytics</h2>
+        <p>Visualize your finances from the <strong>Reports</strong> page.</p>
+        <h3>Available Reports</h3>
+        <div style="overflow-x:auto;">
+          <table class="doc-table">
+            <thead>
+              <tr><th>Report</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Net Worth</td><td>Total assets minus liabilities with 7-day and 30-day changes</td></tr>
+              <tr><td>Net Worth History</td><td>Chart showing net worth over time with daily snapshots</td></tr>
+              <tr><td>Cash Flow</td><td>Income vs. expenses with running balance</td></tr>
+              <tr><td>Spending by Category</td><td>Doughnut chart breakdown of expenses</td></tr>
+              <tr><td>Income vs. Expenses</td><td>Side-by-side comparison over time</td></tr>
+              <tr><td>Monthly Trends</td><td>Month-over-month spending patterns</td></tr>
+              <tr><td>Savings Rate</td><td>Percentage of income saved with best/worst months</td></tr>
+              <tr><td>Year-over-Year</td><td>Compare current year to previous years</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Date Range Selection</h3>
+        <p>All reports support flexible date ranges: This Month, Last Month, This Quarter, This Year, Last Year, or custom dates.</p>
+        <h3>Export Options</h3>
+        <ul>
+          <li><strong>Export to PDF</strong> — Generate a formatted PDF report</li>
+          <li><strong>Export to CSV</strong> — Download raw data for spreadsheets</li>
+        </ul>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- IMPORT                         -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="import">
+        <h2>13. Import</h2>
+        <p>Import transactions from bank exports via the <strong>Import</strong> page.</p>
+        <h3>Supported Formats</h3>
+        <ul>
+          <li><strong>CSV</strong> — Comma-separated values (most banks)</li>
+          <li><strong>Excel</strong> — .xlsx and .xls files</li>
+          <li><strong>OFX</strong> — Open Financial Exchange</li>
+          <li><strong>QFX</strong> — Quicken Financial Exchange</li>
+          <li><strong>QIF</strong> — Quicken Interchange Format</li>
+        </ul>
+        <h3>Import Workflow</h3>
+        <ol>
+          <li>Select the target account (must exist first)</li>
+          <li>Choose your file</li>
+          <li>Map columns to fields (auto-detected when possible)</li>
+          <li>Preview the data</li>
+          <li>Import</li>
+        </ol>
+        <h3>Smart Duplicate Detection</h3>
+        <p>Re-import the same file safely — duplicates are automatically detected and skipped based on date, amount, and description.</p>
+        <h3>Auto-Categorization</h3>
+        <p>Imported transactions are automatically categorized based on your category rules and the built-in merchant database.</p>
+        <h3>Import History</h3>
+        <p>View a log of past imports showing file name, account, imported count, and duplicates skipped.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- SIMPLEFIN                      -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="simplefin">
+        <h2>14. Bank Sync (SimpleFIN)</h2>
+        <p>Connect to your bank for automatic transaction syncing via SimpleFIN — a privacy-focused bank aggregator.</p>
+        <h3>How It Works</h3>
+        <ol>
+          <li>Sign up at <a href="https://www.simplefin.org">SimpleFIN</a> and connect your banks there</li>
+          <li>Get an access URL from SimpleFIN</li>
+          <li>Paste the URL into indiBudget (Settings &rarr; SimpleFIN)</li>
+          <li>Map your SimpleFIN accounts to indiBudget accounts</li>
+          <li>Sync transactions on demand or automatically</li>
+        </ol>
+        <h3>Privacy</h3>
+        <p><strong>Your bank credentials never touch indiBudget.</strong> SimpleFIN handles authentication with your bank — indiBudget only receives transaction data via an access token.</p>
+        <h3>Sync Options</h3>
+        <ul>
+          <li><strong>Manual Sync</strong> — Click to sync when you want</li>
+          <li><strong>Automatic Sync</strong> — Daily or weekly background sync</li>
+        </ul>
+        <p>Duplicate detection ensures transactions aren't imported twice.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- BACKUP                         -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="backup">
+        <h2>15. Backup &amp; Restore</h2>
+        <p>Protect your data from the <strong>Settings</strong> page.</p>
+        <h3>Creating a Backup</h3>
+        <p>Click <strong>Export Backup</strong> to save a complete JSON backup of all your data: accounts, transactions, categories, budgets, goals, recurring transactions, and category rules.</p>
+        <h3>Restoring from Backup</h3>
+        <ol>
+          <li>Click <strong>Restore from Backup</strong></li>
+          <li>Select a backup JSON file</li>
+          <li>Data is validated and imported</li>
+          <li>Duplicates are automatically skipped</li>
+        </ol>
+        <h3>Backup Reminders</h3>
+        <p>Enable backup reminders to get notified when it's been too long since your last backup.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- ENCRYPTION                     -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="encryption">
+        <h2>16. Security &amp; Encryption</h2>
+        <h3>Local-First Privacy</h3>
+        <p>All your data stays on your device. indiBudget never sends your financial information to any server (except SimpleFIN if you choose to enable bank sync).</p>
+        <h3>Data Encryption</h3>
+        <p>Enable optional AES-256-GCM encryption to protect your database at rest. When enabled:</p>
+        <ul>
+          <li>Data is encrypted using a password you provide</li>
+          <li>Key derivation uses Argon2id (64 MB memory, 3 iterations, 256-bit output)</li>
+          <li>Resistant to brute-force attacks</li>
+        </ul>
+        <h3>Password Requirements</h3>
+        <p>Strong passwords are enforced — minimum length and complexity requirements help protect your data.</p>
+        <h3>Changing Your Password</h3>
+        <p>You can change your encryption password at any time. The database is re-encrypted with the new key.</p>
+        <h3>Path Traversal Protection</h3>
+        <p>All file operations are validated to prevent unauthorized access to files outside the expected directories.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- SETTINGS                       -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="settings">
+        <h2>17. Settings</h2>
+        <p>Configure indiBudget from the <strong>Settings</strong> page.</p>
+        <h3>Display</h3>
+        <ul>
+          <li><strong>Theme</strong> — Light, Dark, or System</li>
+          <li><strong>Currency Format</strong> — Symbol and decimal places</li>
+          <li><strong>Date Format</strong> — How dates are displayed</li>
+        </ul>
+        <h3>Notifications</h3>
+        <ul>
+          <li><strong>Bill Reminders</strong> — Days before due date to notify</li>
+          <li><strong>Test Notification</strong> — Verify notifications work</li>
+        </ul>
+        <h3>SimpleFIN</h3>
+        <ul>
+          <li>Configure access URL</li>
+          <li>Map accounts</li>
+          <li>Set sync frequency</li>
+        </ul>
+        <h3>Backup &amp; Restore</h3>
+        <ul>
+          <li>Export and import backups</li>
+          <li>Configure backup reminders</li>
+        </ul>
+        <h3>Security</h3>
+        <ul>
+          <li>Enable/disable encryption</li>
+          <li>Change encryption password</li>
+        </ul>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- KEYBOARD SHORTCUTS             -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="shortcuts">
+        <h2>18. Keyboard Shortcuts</h2>
+        <div style="overflow-x:auto;">
+          <table class="doc-table">
+            <thead>
+              <tr><th>Shortcut</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>Escape</kbd></td><td>Close modal dialogs</td></tr>
+              <tr><td><kbd>Enter</kbd></td><td>Submit forms</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- INSTALLATION                   -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="installation">
+        <h2>19. Installation</h2>
+
+        <h3>Linux</h3>
+        <p>Download the appropriate package from the releases page:</p>
+        <ul>
+          <li><strong>Debian / Ubuntu / Mint:</strong> <code>sudo dpkg -i indi-budget_*.deb</code></li>
+          <li><strong>Fedora / RHEL:</strong> <code>sudo rpm -i indi-budget-*.rpm</code></li>
+          <li><strong>AppImage:</strong> Make executable and run: <code>chmod +x indiBudget-*.AppImage && ./indiBudget-*.AppImage</code></li>
+        </ul>
+        <p>Data is stored in <code>~/.local/share/indibudget/</code> following the XDG Base Directory Specification.</p>
+
+        <h3>macOS</h3>
+        <p>Download the <code>.dmg</code> from the releases page. Open the DMG and drag indiBudget to your Applications folder. Data is stored in <code>~/Library/Application Support/indibudget/</code>.</p>
+
+        <h3>Windows</h3>
+        <p>Download the MSI or NSIS installer from the releases page. Run and follow the prompts. Data is stored in <code>%APPDATA%\indibudget\</code>.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
+      <!-- TROUBLESHOOTING                -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="troubleshooting">
+        <h2>20. Troubleshooting</h2>
+
+        <h3>App shows incorrect balance</h3>
+        <p>Balances are always computed from starting balance plus all transactions. Check that:</p>
+        <ul>
+          <li>Your starting balance is correct</li>
+          <li>No transactions are missing or duplicated</li>
+          <li>Transfer transactions exist in both accounts</li>
+        </ul>
+
+        <h3>Import skips all transactions as duplicates</h3>
+        <p>This usually means you've already imported this file. If you're sure transactions are new, check that the date format mapping is correct — incorrect date parsing can cause false duplicate matches.</p>
+
+        <h3>SimpleFIN sync fails</h3>
+        <p>Verify your access URL is correct. Access URLs expire — you may need to generate a new one from SimpleFIN. Check that your SimpleFIN subscription is active.</p>
+
+        <h3>Blank or white window on startup (Linux)</h3>
+        <p>Some GPU drivers cause WebKitGTK rendering issues. Try launching with:</p>
+        <pre><code>WEBKIT_DISABLE_DMABUF_RENDERER=1 indi-budget</code></pre>
+
+        <h3>Forgot encryption password</h3>
+        <p>There is no password recovery mechanism. If you forget your encryption password, you must delete the database and start fresh (or restore from an unencrypted backup).</p>
+        <ul>
+          <li><strong>Linux:</strong> <code>rm ~/.local/share/indibudget/indibudget.db</code></li>
+          <li><strong>macOS:</strong> <code>rm ~/Library/Application\ Support/indibudget/indibudget.db</code></li>
+          <li><strong>Windows:</strong> Delete <code>%APPDATA%\indibudget\indibudget.db</code></li>
+        </ul>
+
+        <h3>Need More Help?</h3>
+        <p>Visit our <a href="https://github.com/mattmilano/indiBudget/issues">GitHub Issues</a> page to report bugs or request features.</p>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+    </div>
+  </section>
+
+</BaseLayout>
+
+<style>
+  .doc-toc {
+    background: var(--neutral-50, #f8f9fa);
+    border: 1px solid var(--neutral-200, #e5e7eb);
+    border-radius: 8px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 3rem;
+  }
+  .toc-list {
+    columns: 2;
+    column-gap: 2rem;
+    padding-left: 1.25rem;
+    margin: 0;
+  }
+  .toc-list li {
+    padding: 0.2rem 0;
+    break-inside: avoid;
+    font-size: 0.95rem;
+  }
+  .toc-list a {
+    color: var(--primary, #3b82f6);
+    text-decoration: none;
+  }
+  .toc-list a:hover {
+    text-decoration: underline;
+  }
+
+  .doc-section {
+    padding: 2rem 0 1rem;
+    border-bottom: 1px solid var(--neutral-200, #e5e7eb);
+  }
+  .doc-section:last-of-type {
+    border-bottom: none;
+  }
+  .doc-section h2 {
+    margin-top: 0;
+    font-size: 1.5rem;
+    color: var(--neutral-900, #111827);
+  }
+  .doc-section h3 {
+    font-size: 1.1rem;
+    margin-top: 1.5rem;
+    color: var(--neutral-800, #1f2937);
+  }
+  .doc-section p,
+  .doc-section li {
+    line-height: 1.7;
+    color: var(--neutral-700, #374151);
+    font-size: 0.95rem;
+  }
+  .doc-section ul,
+  .doc-section ol {
+    padding-left: 1.5rem;
+  }
+  .doc-section li {
+    margin-bottom: 0.35rem;
+  }
+  .doc-section code {
+    background: var(--neutral-100, #f3f4f6);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--neutral-800, #1f2937);
+  }
+  .doc-section pre {
+    background: var(--neutral-900, #111827);
+    color: var(--neutral-100, #f3f4f6);
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  .doc-section pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+  .doc-section kbd {
+    background: var(--neutral-100, #f3f4f6);
+    border: 1px solid var(--neutral-300, #d1d5db);
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    box-shadow: 0 1px 0 var(--neutral-300, #d1d5db);
+  }
+  .doc-back {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+  }
+  .doc-back a {
+    color: var(--primary, #3b82f6);
+    text-decoration: none;
+  }
+  .doc-back a:hover {
+    text-decoration: underline;
+  }
+
+  .doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .doc-table th,
+  .doc-table td {
+    text-align: left;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--neutral-200, #e5e7eb);
+  }
+  .doc-table th {
+    background: var(--neutral-50, #f8f9fa);
+    font-weight: 600;
+    color: var(--neutral-900, #111827);
+  }
+  .doc-table td {
+    color: var(--neutral-700, #374151);
+  }
+
+  @media (max-width: 640px) {
+    .toc-list {
+      columns: 1;
+    }
+  }
+</style>
