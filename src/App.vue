@@ -1,10 +1,36 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import UserAgreementModal from './components/UserAgreementModal.vue';
+import * as api from './services/api';
 
 const route = useRoute();
 
 const sidebarOpen = ref(true);
+const showAgreement = ref(false);
+const appReady = ref(false);
+
+const CURRENT_AGREEMENT_VERSION = '1.0';
+
+onMounted(async () => {
+  try {
+    const accepted = await api.getSetting('user_agreement_accepted');
+    const version = await api.getSetting('user_agreement_version');
+
+    if (accepted !== 'true' || version !== CURRENT_AGREEMENT_VERSION) {
+      showAgreement.value = true;
+    } else {
+      appReady.value = true;
+    }
+  } catch {
+    showAgreement.value = true;
+  }
+});
+
+function onAgreementAccepted() {
+  showAgreement.value = false;
+  appReady.value = true;
+}
 
 const navItems = [
   { name: 'Dashboard', path: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -26,7 +52,10 @@ const isActive = (path: string) => route.path === path;
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-100 dark:bg-gray-900">
+  <!-- User Agreement Modal -->
+  <UserAgreementModal :show="showAgreement" @accepted="onAgreementAccepted" />
+
+  <div v-if="appReady" class="flex h-screen bg-gray-100 dark:bg-gray-900">
     <!-- Sidebar - Always dark like indiAccounting -->
     <aside
       :class="[
