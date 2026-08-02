@@ -97,7 +97,12 @@ npm run tauri android build
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+The source code is released under the MIT License - see [LICENSE](LICENSE) for details.
+
+Use of the distributed application is additionally governed by the
+[User Agreement](LICENSE-USER-AGREEMENT.md), which is presented on first run.
+It does not restrict your rights under the MIT License to use, modify, or
+redistribute the source code.
 
 ## Contributing
 
