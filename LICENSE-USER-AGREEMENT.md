@@ -2,7 +2,7 @@
 
 **Version 1.0 — Effective June 2026**
 
-This is a legal agreement between you (the "User") and Indomitus Group ("Company"), developed by Matt Milano. By using indiBudget, you agree to these terms.
+This is a legal agreement between you (the "User") and Indomitus Group ("Company"), developed by Matt Milano. By using the indiBudget application as distributed by Indomitus Group, you agree to these terms. This agreement applies to the distributed application only — the indiBudget source code is licensed separately under the MIT License (see Section 2).
 
 ---
 
@@ -121,7 +121,7 @@ indiBudget is built with excellent open-source software. See the ACKNOWLEDGMENTS
 
 ---
 
-**By clicking "I Agree" or continuing to use indiBudget, you acknowledge that you have read, understood, and agree to be bound by this User Agreement.**
+**By clicking "I Agree" or continuing to use the distributed indiBudget application, you acknowledge that you have read, understood, and agree to be bound by this User Agreement.**
 
 ---
 

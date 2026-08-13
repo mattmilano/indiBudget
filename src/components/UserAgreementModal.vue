@@ -21,7 +21,7 @@ onMounted(async () => {
 
 **Version 1.0 — Effective June 2026**
 
-This is a legal agreement between you (the "User") and Indomitus Group ("Company"), developed by Matt Milano. By using indiBudget, you agree to these terms.
+This is a legal agreement between you (the "User") and Indomitus Group ("Company"), developed by Matt Milano. By using the indiBudget application as distributed by Indomitus Group, you agree to these terms. This agreement applies to the distributed application only — the indiBudget source code is licensed separately under the MIT License (see Section 2).
 
 ---
 
