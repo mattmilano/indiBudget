@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use indibudget_lib::boundary::registry::{encode, BoundaryCtx, Registry};
+use indibudget_lib::boundary::news::{CatchUp, Notice};
 use indibudget_lib::boundary::users::create_user;
 use indibudget_lib::boundary::{Access, Area, BoundaryError, Grants, Request, Required, Response};
 use indibudget_lib::database::{repository, Database};
@@ -40,6 +41,13 @@ fn h_create_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryEr
     ctx.db
         .with_connection(|conn| repository::create_category(conn, &category))
         .map_err(|e| BoundaryError::internal(e.to_string()))?;
+
+    // The shape every swept write will take: announce only after it landed.
+    ctx.shared.news.publish(Notice::RecordChanged {
+        area: Area::Structure,
+        record_kind: "category".into(),
+        record_id: category.id.clone(),
+    });
     encode(category)
 }
 
@@ -52,6 +60,7 @@ fn test_registry() -> Registry {
         h_create_category,
     );
     indibudget_lib::boundary::leases::register(&mut registry);
+    indibudget_lib::boundary::news::register(&mut registry);
     registry
 }
 
@@ -641,4 +650,191 @@ impl ResponseExt for Response {
     fn is_err_response(&self) -> bool {
         !self.is_ok()
     }
+}
+
+// ------------------------------------------------------------ news (phase 5)
+
+fn catch_up(client: &mut Client, mark: Option<&serde_json::Value>) -> CatchUp {
+    let args = match mark {
+        Some(m) => json!({ "mark": m }),
+        None => json!({ "mark": null }),
+    };
+    let response = client
+        .invoke(Request::new("news_catch_up", args))
+        .expect("the call should reach the host");
+    match response {
+        Response::Ok { value } => serde_json::from_value(value).expect("a catch-up result"),
+        Response::Err { sentence, .. } => panic!("unexpected refusal: {sentence}"),
+    }
+}
+
+fn mark_value(result: &CatchUp) -> serde_json::Value {
+    let mark = match result {
+        CatchUp::Notices { mark, .. } | CatchUp::StartOver { mark } => mark,
+    };
+    serde_json::to_value(mark).unwrap()
+}
+
+fn heard(result: &CatchUp) -> &[Notice] {
+    match result {
+        CatchUp::Notices { notices, .. } => notices,
+        CatchUp::StartOver { .. } => panic!("expected notices, got start_over"),
+    }
+}
+
+#[test]
+fn one_persons_write_is_heard_by_another() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    // Jo has Planning only, so give them a grant that can hear Structure by
+    // using the owner as the listener instead.
+    let mut listener = signed_in_client(&fixture, "sam");
+    let start = mark_value(&catch_up(&mut listener, None));
+
+    sam.invoke(Request::new("create_category", json!({ "name": "Allotment" })))
+        .unwrap();
+
+    let result = catch_up(&mut listener, Some(&start));
+    let notices = heard(&result);
+    assert_eq!(notices.len(), 1, "the write should have been announced");
+    match &notices[0] {
+        Notice::RecordChanged { record_kind, .. } => assert_eq!(record_kind, "category"),
+        other => panic!("expected RecordChanged, got {other:?}"),
+    }
+
+    // And Jo, who cannot read Structure, hears nothing about it.
+    let jo_start = mark_value(&catch_up(&mut jo, None));
+    sam.invoke(Request::new("create_category", json!({ "name": "Shed" })))
+        .unwrap();
+    let jo_result = catch_up(&mut jo, Some(&jo_start));
+    assert!(
+        heard(&jo_result).is_empty(),
+        "Jo has no Structure grant and should not hear about categories"
+    );
+}
+
+#[test]
+fn a_hold_is_announced_with_the_holders_name() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    let start = mark_value(&catch_up(&mut jo, None));
+    lease(&mut sam, "lease_acquire", "budget", "groceries");
+
+    let result = catch_up(&mut jo, Some(&start));
+    let notices = heard(&result);
+    assert_eq!(notices.len(), 1);
+    match &notices[0] {
+        Notice::RecordBusy {
+            holder, record_id, ..
+        } => {
+            assert_eq!(holder, "Sam");
+            assert_eq!(record_id, "groceries");
+        }
+        other => panic!("expected RecordBusy, got {other:?}"),
+    }
+}
+
+#[test]
+fn letting_go_is_announced_so_the_badge_comes_down() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "groceries");
+    let start = mark_value(&catch_up(&mut jo, None));
+
+    lease(&mut sam, "lease_release", "budget", "groceries");
+
+    let result = catch_up(&mut jo, Some(&start));
+    let notices = heard(&result);
+    assert_eq!(notices.len(), 1);
+    assert!(matches!(notices[0], Notice::RecordFreed { .. }));
+}
+
+/// A beat every twenty seconds per open editor would bury the log.
+#[test]
+fn renewals_are_silent() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "groceries");
+    let start = mark_value(&catch_up(&mut jo, None));
+
+    for _ in 0..5 {
+        lease(&mut sam, "lease_renew", "budget", "groceries");
+    }
+
+    let result = catch_up(&mut jo, Some(&start));
+    assert!(
+        heard(&result).is_empty(),
+        "five heartbeats produced {} notices",
+        heard(&result).len()
+    );
+}
+
+/// A refused write changed nothing, so it announces nothing.
+#[test]
+fn a_refused_write_makes_no_news() {
+    let fixture = hosted();
+    let mut alex = signed_in_client(&fixture, "alex");
+    let mut listener = signed_in_client(&fixture, "sam");
+
+    let start = mark_value(&catch_up(&mut listener, None));
+
+    // Alex has no Structure grant; this is refused.
+    let refused = alex
+        .invoke(Request::new("create_category", json!({ "name": "Sneaky" })))
+        .unwrap();
+    assert!(!refused.is_ok());
+
+    let result = catch_up(&mut listener, Some(&start));
+    assert!(
+        heard(&result).is_empty(),
+        "a refused write announced itself"
+    );
+}
+
+#[test]
+fn a_dropped_connection_announces_the_holds_it_gave_up() {
+    let fixture = hosted();
+    let mut jo = signed_in_client(&fixture, "jo");
+    let start = mark_value(&catch_up(&mut jo, None));
+
+    {
+        let mut sam = signed_in_client(&fixture, "sam");
+        lease(&mut sam, "lease_acquire", "budget", "groceries");
+    } // Sam's laptop closes.
+
+    for _ in 0..50 {
+        let result = catch_up(&mut jo, Some(&start));
+        if heard(&result)
+            .iter()
+            .any(|n| matches!(n, Notice::RecordFreed { .. }))
+        {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the badge would have stayed up after the holder disconnected");
+}
+
+#[test]
+fn asking_with_no_mark_starts_from_now_rather_than_replaying_history() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+
+    sam.invoke(Request::new("create_category", json!({ "name": "Before" })))
+        .unwrap();
+
+    let mut latecomer = signed_in_client(&fixture, "sam");
+    let result = catch_up(&mut latecomer, None);
+    assert!(
+        heard(&result).is_empty(),
+        "a screen that just opened was handed a backlog"
+    );
 }

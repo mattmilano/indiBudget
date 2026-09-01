@@ -39,6 +39,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::registry::{decode, encode, BoundaryCtx, Registry};
+use super::news::Notice;
 use super::{authorize, Actor, Area, BoundaryError, Required, Stamped};
 
 /// How long a hold survives without a heartbeat.
@@ -243,11 +244,18 @@ impl Leases {
     }
 
     /// Give up one hold. Someone else's hold is never released by this.
-    pub fn release(&self, key: &LeaseKey, actor: &Actor) {
+    ///
+    /// Returns whether anything was actually let go, so the caller knows
+    /// whether there is news to announce. Releasing a hold you do not have is
+    /// not an error, but it is also not an event.
+    pub fn release(&self, key: &LeaseKey, actor: &Actor) -> bool {
         let mut held = self.lock();
         let me = Principal::of(actor);
         if held.get(key).map(|h| h.holder == me).unwrap_or(false) {
             held.remove(key);
+            true
+        } else {
+            false
         }
     }
 
@@ -255,16 +263,29 @@ impl Leases {
     ///
     /// A successful save drops this author's holds on that kind of record, so
     /// the badge comes down everywhere without anyone pressing anything.
-    pub fn release_all_of_kind(&self, kind: Leasable, actor: &Actor) {
+    pub fn release_all_of_kind(&self, kind: Leasable, actor: &Actor) -> Vec<LeaseKey> {
         let me = Principal::of(actor);
-        self.lock()
-            .retain(|key, held| !(key.kind == kind && held.holder == me));
+        let mut held = self.lock();
+        let freed: Vec<LeaseKey> = held
+            .iter()
+            .filter(|(key, h)| key.kind == kind && h.holder == me)
+            .map(|(key, _)| key.clone())
+            .collect();
+        held.retain(|key, h| !(key.kind == kind && h.holder == me));
+        freed
     }
 
     /// Drop every hold this actor has, for a sign-out or a dropped connection.
-    pub fn release_everything_for(&self, actor: &Actor) {
+    pub fn release_everything_for(&self, actor: &Actor) -> Vec<LeaseKey> {
         let me = Principal::of(actor);
-        self.lock().retain(|_, held| held.holder != me);
+        let mut held = self.lock();
+        let freed: Vec<LeaseKey> = held
+            .iter()
+            .filter(|(_, h)| h.holder == me)
+            .map(|(key, _)| key.clone())
+            .collect();
+        held.retain(|_, h| h.holder != me);
+        freed
     }
 
     /// Who holds this, if anyone — for drawing a badge.
@@ -756,10 +777,19 @@ fn gate(ctx: &BoundaryCtx, args: Value) -> Result<(Leasable, String), BoundaryEr
 fn h_acquire(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
     let (kind, record_id) = gate(ctx, args)?;
     ctx.shared.leases.acquire(
-        LeaseKey::new(kind, record_id),
+        LeaseKey::new(kind, record_id.clone()),
         ctx.actor,
         std::time::Instant::now(),
     )?;
+
+    // Only after it succeeded. A refused hold changed nothing and so announces
+    // nothing.
+    ctx.shared.news.publish(Notice::RecordBusy {
+        area: kind.area(),
+        record_kind: kind.label().to_string(),
+        record_id,
+        holder: ctx.actor.display_name.clone(),
+    });
     encode(serde_json::json!({ "held": true }))
 }
 
@@ -770,14 +800,26 @@ fn h_renew(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
         ctx.actor,
         std::time::Instant::now(),
     )?;
+
+    // Deliberately silent. A beat every twenty seconds per open editor would
+    // bury the log under events meaning "still, yes".
     encode(serde_json::json!({ "held": true }))
 }
 
 fn h_release(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
     let (kind, record_id) = gate(ctx, args)?;
-    ctx.shared
+    let let_go = ctx
+        .shared
         .leases
-        .release(&LeaseKey::new(kind, record_id), ctx.actor);
+        .release(&LeaseKey::new(kind, record_id.clone()), ctx.actor);
+
+    if let_go {
+        ctx.shared.news.publish(Notice::RecordFreed {
+            area: kind.area(),
+            record_kind: kind.label().to_string(),
+            record_id,
+        });
+    }
     encode(serde_json::json!({ "held": false }))
 }
 

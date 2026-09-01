@@ -25,6 +25,7 @@ use super::protocol::{ClientMessage, ServerMessage};
 use super::throttle::Throttle;
 use crate::boundary::registry::{dispatch, BoundaryCtx, Registry};
 use crate::boundary::users::authenticate;
+use crate::boundary::news::Notice;
 use crate::boundary::{Actor, BoundaryError, SharedState};
 use crate::database::Database;
 
@@ -279,7 +280,13 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
     // for the rest of the lease. Passive expiry would clear it eventually;
     // this clears it now.
     if let Some(actor) = actor.as_ref() {
-        state.shared.leases.release_everything_for(actor);
+        for key in state.shared.leases.release_everything_for(actor) {
+            state.shared.news.publish(Notice::RecordFreed {
+                area: key.kind.area(),
+                record_kind: key.kind.label().to_string(),
+                record_id: key.record_id,
+            });
+        }
     }
 }
 
