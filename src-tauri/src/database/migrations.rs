@@ -27,6 +27,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_007_USER_CATEGORY_RULES, 7),
         (MIGRATION_008_DERIVED_BALANCES, 8),
         (MIGRATION_009_APP_SETTINGS, 9),
+        (MIGRATION_010_MULTI_USER_BOUNDARY, 10),
     ];
 
     for (sql, version) in migrations {
@@ -240,4 +241,100 @@ const MIGRATION_009_APP_SETTINGS: &str = r#"
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
+"#;
+
+// Multi-user phase 1: the boundary.
+//
+// `row_version` is maintained by an AFTER UPDATE trigger per table. This gets
+// the optimistic-concurrency backstop into every user-editable table without
+// touching a single repository UPDATE, and it cannot be forgotten by new code.
+// SQLite's `recursive_triggers` is OFF by default and this codebase never
+// enables it, so a trigger updating its own table cannot re-fire.
+//
+// `created_by` / `updated_by` are deliberately NOT maintained by triggers. A
+// trigger would need per-session actor state on the connection, and there are
+// legitimate raw connections (tests, backup/restore, future CLI or salvage
+// paths) that would break on a trigger referencing state they do not carry.
+// These columns are stamped explicitly by the boundary write wrappers instead,
+// and stay NULL for rows written outside the boundary.
+const MIGRATION_010_MULTI_USER_BOUNDARY: &str = r#"
+    ALTER TABLE accounts ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE accounts ADD COLUMN created_by TEXT;
+    ALTER TABLE accounts ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE transactions ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE transactions ADD COLUMN created_by TEXT;
+    ALTER TABLE transactions ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE categories ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE categories ADD COLUMN created_by TEXT;
+    ALTER TABLE categories ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE budgets ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE budgets ADD COLUMN created_by TEXT;
+    ALTER TABLE budgets ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE savings_goals ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE savings_goals ADD COLUMN created_by TEXT;
+    ALTER TABLE savings_goals ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE goal_contributions ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE goal_contributions ADD COLUMN created_by TEXT;
+    ALTER TABLE goal_contributions ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE recurring_transactions ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE recurring_transactions ADD COLUMN created_by TEXT;
+    ALTER TABLE recurring_transactions ADD COLUMN updated_by TEXT;
+
+    ALTER TABLE category_rules ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE category_rules ADD COLUMN created_by TEXT;
+    ALTER TABLE category_rules ADD COLUMN updated_by TEXT;
+
+    CREATE TRIGGER IF NOT EXISTS trg_accounts_row_version
+    AFTER UPDATE ON accounts FOR EACH ROW
+    BEGIN
+        UPDATE accounts SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_transactions_row_version
+    AFTER UPDATE ON transactions FOR EACH ROW
+    BEGIN
+        UPDATE transactions SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_categories_row_version
+    AFTER UPDATE ON categories FOR EACH ROW
+    BEGIN
+        UPDATE categories SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_budgets_row_version
+    AFTER UPDATE ON budgets FOR EACH ROW
+    BEGIN
+        UPDATE budgets SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_savings_goals_row_version
+    AFTER UPDATE ON savings_goals FOR EACH ROW
+    BEGIN
+        UPDATE savings_goals SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_goal_contributions_row_version
+    AFTER UPDATE ON goal_contributions FOR EACH ROW
+    BEGIN
+        UPDATE goal_contributions SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recurring_transactions_row_version
+    AFTER UPDATE ON recurring_transactions FOR EACH ROW
+    BEGIN
+        UPDATE recurring_transactions SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_category_rules_row_version
+    AFTER UPDATE ON category_rules FOR EACH ROW
+    BEGIN
+        UPDATE category_rules SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
 "#;

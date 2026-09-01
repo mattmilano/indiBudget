@@ -1,3 +1,4 @@
+pub mod boundary;
 pub mod commands;
 pub mod database;
 pub mod models;
