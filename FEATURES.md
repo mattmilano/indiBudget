@@ -1,6 +1,6 @@
 # indiBudget — Feature List
 
-**indiBudget** is a privacy-focused, local-first personal finance desktop application. All your financial data lives in an on-device SQLite database — no cloud account, no tracking, no subscription required. Built with a Rust (Tauri) backend and Vue 3 frontend for native performance and a modern interface.
+**indiBudget** is a privacy-focused, local-first personal finance desktop application. All your financial data lives in a SQLite database on your own hardware — no cloud account, no tracking, no subscription required. Use it on one computer, or share one budget across several on your home network. Built with a Rust (Tauri) backend and Vue 3 frontend for native performance and a modern interface.
 
 ---
 
@@ -76,6 +76,19 @@
 - Map bank accounts to indiBudget accounts, sync on demand or automatically (daily/weekly)
 - Duplicate-aware imports with progress reporting
 
+## Sharing a Budget Across Computers
+- **One budget, several people** — a couple or a family can all work from the same budget from their own computers
+- One computer **hosts** and the others connect to it over your home network; no cloud service is involved at any point
+- **Pairing with a short code** read off the host's screen, plus an identity code you can compare aloud to be sure you reached the right computer
+- **Per-person accounts** with their own login and password, secured with Argon2id
+- **Five permission areas** — Money, Planning, Structure, Reports and Admin — so a partner can have full access while a teenager tracks their own goals without seeing the mortgage
+- **Live updates** — a change made on one computer appears on the others within seconds
+- **Edit protection** — open a budget someone else is editing and it says so, by name, before you start typing rather than after
+- Two people can log the evening's receipts at the same time without ever waiting on each other
+- **Maintenance mode** — pause everyone's changes while you take a backup; people can still look at the budget, and any administrator can reopen it
+- **Manage paired computers** — see what is connected and revoke a lost or stolen machine without changing anyone's password
+- **Deactivate someone who has left** without un-pairing the computers they used
+
 ## Security & Privacy
 - **Local-first** — your data lives on hardware you own. There is no cloud account, no server of ours, and nothing is ever sent to us or to any third party.
 - With sharing switched off, which is the default, your data never leaves the computer it is on
@@ -108,4 +121,5 @@
 - **Native desktop performance** via Rust + Tauri (small binary, low memory footprint)
 - **Bank-grade encryption** (AES-256-GCM + Argon2id) available out of the box
 - **Five-format import engine** with idempotent duplicate detection
+- **LAN sharing over TLS** with certificate pinning rather than a certificate authority, because a computer on a home network has no name a CA could vouch for
 - **Cross-platform:** Linux (AppImage, .deb, .rpm), with Windows and macOS support via Tauri
