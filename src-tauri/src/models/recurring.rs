@@ -106,6 +106,25 @@ impl RecurringTransaction {
         }
     }
 
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn from_request(request: CreateRecurringRequest) -> Self {
+        let mut recurring = RecurringTransaction::new(
+            request.account_id,
+            request.transaction_type,
+            request.amount,
+            request.description,
+            request.frequency,
+            request.start_date,
+        );
+        recurring.category_id = request.category_id;
+        recurring.payee = request.payee;
+        recurring.end_date = request.end_date;
+        recurring.day_of_month = request.day_of_month;
+        recurring.auto_post = request.auto_post.unwrap_or(false);
+        recurring.reminder_days = request.reminder_days;
+        recurring
+    }
+
     pub fn calculate_next_occurrence(&self, from_date: NaiveDate) -> Option<NaiveDate> {
         use chrono::Datelike;
 
@@ -178,6 +197,42 @@ pub struct UpdateRecurringRequest {
     pub auto_post: Option<bool>,
     pub reminder_days: Option<i32>,
     pub is_active: Option<bool>,
+}
+
+impl UpdateRecurringRequest {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn apply_to(self, recurring: &mut RecurringTransaction) {
+        if let Some(amount) = self.amount {
+            recurring.amount = amount;
+        }
+        if let Some(description) = self.description {
+            recurring.description = description;
+        }
+        if let Some(category_id) = self.category_id {
+            recurring.category_id = Some(category_id);
+        }
+        if let Some(payee) = self.payee {
+            recurring.payee = Some(payee);
+        }
+        if let Some(frequency) = self.frequency {
+            recurring.frequency = frequency;
+        }
+        if let Some(end_date) = self.end_date {
+            recurring.end_date = Some(end_date);
+        }
+        if let Some(day_of_month) = self.day_of_month {
+            recurring.day_of_month = Some(day_of_month);
+        }
+        if let Some(auto_post) = self.auto_post {
+            recurring.auto_post = auto_post;
+        }
+        if let Some(reminder_days) = self.reminder_days {
+            recurring.reminder_days = Some(reminder_days);
+        }
+        if let Some(is_active) = self.is_active {
+            recurring.is_active = is_active;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

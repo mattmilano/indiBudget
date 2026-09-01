@@ -116,6 +116,26 @@ impl Transaction {
     }
 }
 
+impl Transaction {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn from_request(request: CreateTransactionRequest) -> Self {
+        let mut tx = Transaction::new(
+            request.account_id,
+            request.transaction_type,
+            request.amount,
+            request.date,
+            request.description,
+        );
+        tx.category_id = request.category_id;
+        tx.payee = request.payee;
+        tx.notes = request.notes;
+        tx.status = request.status.unwrap_or(TransactionStatus::Cleared);
+        tx.transfer_account_id = request.transfer_account_id;
+        tx.parent_transaction_id = request.parent_transaction_id;
+        tx
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTransactionRequest {
     pub account_id: String,
@@ -144,6 +164,42 @@ pub struct UpdateTransactionRequest {
     pub notes: Option<String>,
     pub status: Option<TransactionStatus>,
     pub is_split: Option<bool>,
+}
+
+impl UpdateTransactionRequest {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn apply_to(self, tx: &mut Transaction) {
+        if let Some(account_id) = self.account_id {
+            tx.account_id = account_id;
+        }
+        if let Some(transaction_type) = self.transaction_type {
+            tx.transaction_type = transaction_type;
+        }
+        if let Some(amount) = self.amount {
+            tx.amount = amount;
+        }
+        if let Some(date) = self.date {
+            tx.date = date;
+        }
+        if let Some(description) = self.description {
+            tx.description = description;
+        }
+        if let Some(category_id) = self.category_id {
+            tx.category_id = Some(category_id);
+        }
+        if let Some(payee) = self.payee {
+            tx.payee = Some(payee);
+        }
+        if let Some(notes) = self.notes {
+            tx.notes = Some(notes);
+        }
+        if let Some(status) = self.status {
+            tx.status = status;
+        }
+        if let Some(is_split) = self.is_split {
+            tx.is_split = is_split;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

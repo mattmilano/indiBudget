@@ -76,6 +76,22 @@ impl Budget {
     }
 }
 
+impl Budget {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn from_request(request: CreateBudgetRequest) -> Self {
+        let mut budget = Budget::new(
+            request.name,
+            request.category_id,
+            request.amount,
+            request.period,
+            request.start_date,
+        );
+        budget.end_date = request.end_date;
+        budget.rollover = request.rollover.unwrap_or(false);
+        budget
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateBudgetRequest {
     pub name: String,
@@ -97,6 +113,33 @@ pub struct UpdateBudgetRequest {
     pub end_date: Option<NaiveDate>,
     pub rollover: Option<bool>,
     pub is_active: Option<bool>,
+}
+
+impl UpdateBudgetRequest {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn apply_to(self, budget: &mut Budget) {
+        if let Some(name) = self.name {
+            budget.name = name;
+        }
+        if let Some(amount) = self.amount {
+            budget.amount = amount;
+        }
+        if let Some(period) = self.period {
+            budget.period = period;
+        }
+        if let Some(start_date) = self.start_date {
+            budget.start_date = start_date;
+        }
+        if let Some(end_date) = self.end_date {
+            budget.end_date = Some(end_date);
+        }
+        if let Some(rollover) = self.rollover {
+            budget.rollover = rollover;
+        }
+        if let Some(is_active) = self.is_active {
+            budget.is_active = is_active;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

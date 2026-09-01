@@ -102,6 +102,22 @@ impl SavingsGoal {
         }
     }
 
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn from_request(request: CreateGoalRequest) -> Self {
+        let mut goal = SavingsGoal::new(request.name, request.goal_type, request.target_amount);
+        if let Some(current) = request.current_amount {
+            goal.current_amount = current;
+        }
+        goal.target_date = request.target_date;
+        goal.account_id = request.account_id;
+        if let Some(color) = request.color {
+            goal.color = color;
+        }
+        goal.icon = request.icon;
+        goal.notes = request.notes;
+        goal
+    }
+
     pub fn progress_percentage(&self) -> f64 {
         if self.target_amount.is_zero() {
             return 0.0;
@@ -149,6 +165,39 @@ pub struct UpdateGoalRequest {
     pub icon: Option<String>,
     pub notes: Option<String>,
     pub status: Option<GoalStatus>,
+}
+
+impl UpdateGoalRequest {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn apply_to(self, goal: &mut SavingsGoal) {
+        if let Some(name) = self.name {
+            goal.name = name;
+        }
+        if let Some(target_amount) = self.target_amount {
+            goal.target_amount = target_amount;
+        }
+        if let Some(current_amount) = self.current_amount {
+            goal.current_amount = current_amount;
+        }
+        if let Some(target_date) = self.target_date {
+            goal.target_date = Some(target_date);
+        }
+        if let Some(account_id) = self.account_id {
+            goal.account_id = Some(account_id);
+        }
+        if let Some(color) = self.color {
+            goal.color = color;
+        }
+        if let Some(icon) = self.icon {
+            goal.icon = Some(icon);
+        }
+        if let Some(notes) = self.notes {
+            goal.notes = Some(notes);
+        }
+        if let Some(status) = self.status {
+            goal.status = status;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

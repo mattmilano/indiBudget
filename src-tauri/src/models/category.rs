@@ -56,6 +56,14 @@ impl Category {
         }
     }
 
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn from_request(request: CreateCategoryRequest) -> Self {
+        let mut category = Category::new(request.name, request.category_type, request.color);
+        category.icon = request.icon;
+        category.parent_id = request.parent_id;
+        category
+    }
+
     pub fn system(id: &str, name: &str, category_type: CategoryType, color: &str) -> Self {
         let now = Utc::now();
         Self {
@@ -90,6 +98,32 @@ pub struct UpdateCategoryRequest {
     pub icon: Option<String>,
     pub parent_id: Option<String>,
     pub is_active: Option<bool>,
+}
+
+impl UpdateCategoryRequest {
+    /// Shared by the local Tauri command and the boundary handler.
+    pub fn apply_to(self, category: &mut Category) {
+        if let Some(name) = self.name {
+            category.name = name;
+        }
+        if let Some(color) = self.color {
+            category.color = color;
+        }
+        if let Some(icon) = self.icon {
+            category.icon = Some(icon);
+        }
+        if let Some(parent_id) = self.parent_id {
+            // An empty string clears the parent, un-nesting the category.
+            category.parent_id = if parent_id.is_empty() {
+                None
+            } else {
+                Some(parent_id)
+            };
+        }
+        if let Some(is_active) = self.is_active {
+            category.is_active = is_active;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

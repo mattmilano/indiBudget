@@ -112,6 +112,19 @@ impl AppState {
     }
 }
 
+/// Like `with_db`, for operations that already produce a sentence.
+fn with_db_str<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
+where
+    F: FnOnce(&Database) -> Result<T, String>,
+{
+    let guard = state
+        .db
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let db = guard.as_ref().ok_or("Database not initialized")?;
+    f(db)
+}
+
 fn with_db<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
 where
     F: FnOnce(&Database) -> DbResult<T>,
@@ -160,16 +173,21 @@ pub fn get_database_path() -> String {
     database::get_database_path().to_string_lossy().to_string()
 }
 
+/// One implementation, two entry points: the Tauri command below and the
+/// boundary handler both call this, so a remote count cannot diverge from a
+/// local one.
+pub(crate) fn ops_transaction_count(db: &Database) -> DbResult<i32> {
+    db.with_connection(|conn| {
+        let count: i32 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
+            .map_err(crate::database::DatabaseError::Sqlite)?;
+        Ok(count)
+    })
+}
+
 #[tauri::command]
 pub fn get_transaction_count(state: State<AppState>) -> Result<i32, String> {
-    with_db(&state, |db| {
-        db.with_connection(|conn| {
-            let count: i32 = conn
-                .query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
-                .map_err(|e| crate::database::DatabaseError::Sqlite(e))?;
-            Ok(count)
-        })
-    })
+    with_db(&state, ops_transaction_count)
 }
 
 // Account Commands
@@ -179,17 +197,7 @@ pub fn create_account(
     request: CreateAccountRequest,
 ) -> Result<Account, String> {
     with_db(&state, |db| {
-        let mut account = Account::new(request.name, request.account_type);
-
-        if let Some(starting_balance) = request.starting_balance {
-            account.starting_balance = starting_balance;
-            account.balance = starting_balance; // Initially, balance equals starting_balance
-        }
-        if let Some(currency) = request.currency {
-            account.currency = currency;
-        }
-        account.institution = request.institution;
-        account.account_number_last4 = request.account_number_last4;
+        let account = Account::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_account(conn, &account)?;
@@ -219,34 +227,13 @@ pub fn update_account(
 ) -> Result<Account, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut account = repository::get_account(conn, &request.id)?;
-
-            if let Some(name) = request.name {
-                account.name = name;
-            }
-            if let Some(account_type) = request.account_type {
-                account.account_type = account_type;
-            }
-            if let Some(starting_balance) = request.starting_balance {
-                account.starting_balance = starting_balance;
-            }
-            if let Some(currency) = request.currency {
-                account.currency = currency;
-            }
-            if let Some(institution) = request.institution {
-                account.institution = Some(institution);
-            }
-            if let Some(last4) = request.account_number_last4 {
-                account.account_number_last4 = Some(last4);
-            }
-            if let Some(is_active) = request.is_active {
-                account.is_active = is_active;
-            }
-
+            let id = request.id.clone();
+            let mut account = repository::get_account(conn, &id)?;
+            request.apply_to(&mut account);
             repository::update_account(conn, &account)?;
 
             // Re-fetch to get computed balance
-            repository::get_account(conn, &request.id)
+            repository::get_account(conn, &id)
         })
     })
 }
@@ -265,20 +252,7 @@ pub fn create_transaction(
     request: CreateTransactionRequest,
 ) -> Result<Transaction, String> {
     with_db(&state, |db| {
-        let mut tx = Transaction::new(
-            request.account_id,
-            request.transaction_type,
-            request.amount,
-            request.date,
-            request.description,
-        );
-
-        tx.category_id = request.category_id;
-        tx.payee = request.payee;
-        tx.notes = request.notes;
-        tx.status = request.status.unwrap_or(TransactionStatus::Cleared);
-        tx.transfer_account_id = request.transfer_account_id;
-        tx.parent_transaction_id = request.parent_transaction_id;
+        let tx = Transaction::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_transaction(conn, &tx)?;
@@ -311,39 +285,9 @@ pub fn update_transaction(
 ) -> Result<Transaction, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut tx = repository::get_transaction(conn, &request.id)?;
-
-            if let Some(account_id) = request.account_id {
-                tx.account_id = account_id;
-            }
-            if let Some(transaction_type) = request.transaction_type {
-                tx.transaction_type = transaction_type;
-            }
-            if let Some(amount) = request.amount {
-                tx.amount = amount;
-            }
-            if let Some(date) = request.date {
-                tx.date = date;
-            }
-            if let Some(description) = request.description {
-                tx.description = description;
-            }
-            if let Some(category_id) = request.category_id {
-                tx.category_id = Some(category_id);
-            }
-            if let Some(payee) = request.payee {
-                tx.payee = Some(payee);
-            }
-            if let Some(notes) = request.notes {
-                tx.notes = Some(notes);
-            }
-            if let Some(status) = request.status {
-                tx.status = status;
-            }
-            if let Some(is_split) = request.is_split {
-                tx.is_split = is_split;
-            }
-
+            let id = request.id.clone();
+            let mut tx = repository::get_transaction(conn, &id)?;
+            request.apply_to(&mut tx);
             repository::update_transaction(conn, &tx)?;
             Ok(tx)
         })
@@ -361,9 +305,11 @@ pub fn delete_transaction(state: State<AppState>, id: String) -> Result<(), Stri
 /// - An expense from the source account (outgoing)
 /// - An income to the destination account (incoming)
 /// Both transactions share the same transfer_pair_id so they stay in sync.
-#[tauri::command]
-pub fn create_transfer(
-    state: State<AppState>,
+/// One implementation, two entry points: the Tauri command below and the
+/// boundary handler both call this, so a transfer made from a laptop takes
+/// exactly the same path as one made at the host.
+pub(crate) fn ops_create_transfer(
+    db: &Database,
     request: CreateTransferRequest,
 ) -> Result<TransferResult, String> {
     use uuid::Uuid;
@@ -372,8 +318,7 @@ pub fn create_transfer(
         return Err("Cannot transfer to the same account".to_string());
     }
 
-    with_db(&state, |db| {
-        db.with_connection(|conn| {
+    db.with_connection(|conn| {
             // Verify both accounts exist
             let from_account = repository::get_account(conn, &request.from_account_id)?;
             let to_account = repository::get_account(conn, &request.to_account_id)?;
@@ -423,7 +368,15 @@ pub fn create_transfer(
                 transfer_pair_id,
             })
         })
-    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_transfer(
+    state: State<AppState>,
+    request: CreateTransferRequest,
+) -> Result<TransferResult, String> {
+    with_db_str(&state, |db| ops_create_transfer(db, request))
 }
 
 // Category Commands
@@ -440,9 +393,7 @@ pub fn create_category(
     request: CreateCategoryRequest,
 ) -> Result<Category, String> {
     with_db(&state, |db| {
-        let mut category = Category::new(request.name, request.category_type, request.color);
-        category.icon = request.icon;
-        category.parent_id = request.parent_id;
+        let category = Category::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_category(conn, &category)?;
@@ -465,29 +416,9 @@ pub fn update_category(
 ) -> Result<Category, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut category = repository::get_category(conn, &request.id)?;
-
-            if let Some(name) = request.name {
-                category.name = name;
-            }
-            if let Some(color) = request.color {
-                category.color = color;
-            }
-            if let Some(icon) = request.icon {
-                category.icon = Some(icon);
-            }
-            if let Some(parent_id) = request.parent_id {
-                // An empty string clears the parent (un-nests the category)
-                category.parent_id = if parent_id.is_empty() {
-                    None
-                } else {
-                    Some(parent_id)
-                };
-            }
-            if let Some(is_active) = request.is_active {
-                category.is_active = is_active;
-            }
-
+            let id = request.id.clone();
+            let mut category = repository::get_category(conn, &id)?;
+            request.apply_to(&mut category);
             repository::update_category(conn, &category)?;
             Ok(category)
         })
@@ -508,16 +439,7 @@ pub fn create_budget(
     request: CreateBudgetRequest,
 ) -> Result<Budget, String> {
     with_db(&state, |db| {
-        let mut budget = Budget::new(
-            request.name,
-            request.category_id,
-            request.amount,
-            request.period,
-            request.start_date,
-        );
-
-        budget.end_date = request.end_date;
-        budget.rollover = request.rollover.unwrap_or(false);
+        let budget = Budget::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_budget(conn, &budget)?;
@@ -547,30 +469,9 @@ pub fn update_budget(
 ) -> Result<Budget, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut budget = repository::get_budget(conn, &request.id)?;
-
-            if let Some(name) = request.name {
-                budget.name = name;
-            }
-            if let Some(amount) = request.amount {
-                budget.amount = amount;
-            }
-            if let Some(period) = request.period {
-                budget.period = period;
-            }
-            if let Some(start_date) = request.start_date {
-                budget.start_date = start_date;
-            }
-            if let Some(end_date) = request.end_date {
-                budget.end_date = Some(end_date);
-            }
-            if let Some(rollover) = request.rollover {
-                budget.rollover = rollover;
-            }
-            if let Some(is_active) = request.is_active {
-                budget.is_active = is_active;
-            }
-
+            let id = request.id.clone();
+            let mut budget = repository::get_budget(conn, &id)?;
+            request.apply_to(&mut budget);
             repository::update_budget(conn, &budget)?;
             Ok(budget)
         })
@@ -584,14 +485,14 @@ pub fn delete_budget(state: State<AppState>, id: String) -> Result<(), String> {
     })
 }
 
-#[tauri::command]
-pub fn get_budget_status(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_budget_status(
+    db: &Database,
     as_of_date: Option<NaiveDate>,
-) -> Result<Vec<BudgetStatus>, String> {
+) -> DbResult<Vec<BudgetStatus>> {
     let date = as_of_date.unwrap_or_else(|| chrono::Utc::now().date_naive());
 
-    with_db(&state, |db| {
         db.with_connection(|conn| {
             let budgets = repository::get_all_budgets(conn)?;
             let categories = repository::get_all_categories(conn)?;
@@ -619,7 +520,14 @@ pub fn get_budget_status(
 
             Ok(statuses)
         })
-    })
+}
+
+#[tauri::command]
+pub fn get_budget_status(
+    state: State<AppState>,
+    as_of_date: Option<NaiveDate>,
+) -> Result<Vec<BudgetStatus>, String> {
+    with_db(&state, |db| ops_get_budget_status(db, as_of_date))
 }
 
 // Recurring Transaction Commands
@@ -629,21 +537,7 @@ pub fn create_recurring(
     request: CreateRecurringRequest,
 ) -> Result<RecurringTransaction, String> {
     with_db(&state, |db| {
-        let mut recurring = RecurringTransaction::new(
-            request.account_id,
-            request.transaction_type,
-            request.amount,
-            request.description,
-            request.frequency,
-            request.start_date,
-        );
-
-        recurring.category_id = request.category_id;
-        recurring.payee = request.payee;
-        recurring.end_date = request.end_date;
-        recurring.day_of_month = request.day_of_month;
-        recurring.auto_post = request.auto_post.unwrap_or(false);
-        recurring.reminder_days = request.reminder_days;
+        let recurring = RecurringTransaction::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_recurring(conn, &recurring)?;
@@ -659,16 +553,16 @@ pub fn get_recurring(state: State<AppState>) -> Result<Vec<RecurringTransaction>
     })
 }
 
-#[tauri::command]
-pub fn get_upcoming_recurring(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_upcoming_recurring(
+    db: &Database,
     days: Option<i32>,
-) -> Result<Vec<UpcomingRecurring>, String> {
+) -> DbResult<Vec<UpcomingRecurring>> {
     let days = days.unwrap_or(30);
     let today = chrono::Utc::now().date_naive();
     let end_date = today + chrono::Duration::days(days as i64);
 
-    with_db(&state, |db| {
         db.with_connection(|conn| {
             let recurring = repository::get_all_recurring(conn)?;
             let accounts = repository::get_all_accounts(conn)?;
@@ -703,14 +597,22 @@ pub fn get_upcoming_recurring(
             upcoming.sort_by_key(|u| u.next_date);
             Ok(upcoming)
         })
-    })
 }
 
 #[tauri::command]
-pub fn detect_recurring_patterns(
+pub fn get_upcoming_recurring(
     state: State<AppState>,
-) -> Result<Vec<services::recurring_detector::DetectedRecurring>, String> {
-    with_db(&state, |db| {
+    days: Option<i32>,
+) -> Result<Vec<UpcomingRecurring>, String> {
+    with_db(&state, |db| ops_get_upcoming_recurring(db, days))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_detect_recurring_patterns(
+    db: &Database,
+) -> DbResult<Vec<services::recurring_detector::DetectedRecurring>> {
+
         db.with_connection(|conn| {
             // Get all transactions
             let transactions = repository::get_transactions(conn, &TransactionFilter::default())?;
@@ -725,17 +627,23 @@ pub fn detect_recurring_patterns(
 
             Ok(detected)
         })
-    })
 }
 
 #[tauri::command]
-pub fn create_recurring_from_detected(
+pub fn detect_recurring_patterns(
     state: State<AppState>,
+) -> Result<Vec<services::recurring_detector::DetectedRecurring>, String> {
+    with_db(&state, |db| ops_detect_recurring_patterns(db))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_create_recurring_from_detected(
+    db: &Database,
     detected: services::recurring_detector::DetectedRecurring,
-) -> Result<RecurringTransaction, String> {
+) -> DbResult<RecurringTransaction> {
     let today = chrono::Utc::now().date_naive();
 
-    with_db(&state, |db| {
         // Calculate next occurrence based on typical day of month or last occurrence
         let next_occurrence = if let Some(day) = detected.typical_day_of_month {
             // Use the typical day of month, in the current or next month
@@ -801,16 +709,24 @@ pub fn create_recurring_from_detected(
             repository::create_recurring(conn, &recurring)?;
             Ok(recurring)
         })
-    })
 }
 
 #[tauri::command]
-pub fn deactivate_recurring(
+pub fn create_recurring_from_detected(
     state: State<AppState>,
+    detected: services::recurring_detector::DetectedRecurring,
+) -> Result<RecurringTransaction, String> {
+    with_db(&state, |db| ops_create_recurring_from_detected(db, detected))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_deactivate_recurring(
+    db: &Database,
     id: String,
     reason: Option<String>,
-) -> Result<CancelledSubscription, String> {
-    with_db(&state, |db| {
+) -> DbResult<CancelledSubscription> {
+
         db.with_connection(|conn| {
             // Get the recurring transaction first
             let recurring = repository::get_recurring_by_id(conn, &id)?;
@@ -824,21 +740,39 @@ pub fn deactivate_recurring(
 
             Ok(cancelled)
         })
-    })
+}
+
+#[tauri::command]
+pub fn deactivate_recurring(
+    state: State<AppState>,
+    id: String,
+    reason: Option<String>,
+) -> Result<CancelledSubscription, String> {
+    with_db(&state, |db| ops_deactivate_recurring(db, id, reason))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_cancelled_subscriptions(
+    db: &Database,
+) -> DbResult<Vec<CancelledSubscription>> {
+
+        db.with_connection(|conn| repository::get_cancelled_subscriptions(conn))
 }
 
 #[tauri::command]
 pub fn get_cancelled_subscriptions(
     state: State<AppState>,
 ) -> Result<Vec<CancelledSubscription>, String> {
-    with_db(&state, |db| {
-        db.with_connection(|conn| repository::get_cancelled_subscriptions(conn))
-    })
+    with_db(&state, |db| ops_get_cancelled_subscriptions(db))
 }
 
-#[tauri::command]
-pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, String> {
-    with_db(&state, |db| {
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_savings_summary(
+    db: &Database,
+) -> DbResult<SavingsSummary> {
+
         db.with_connection(|conn| {
             let cancelled = repository::get_cancelled_subscriptions(conn)?;
 
@@ -853,7 +787,11 @@ pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, Str
                 cancelled_subscriptions: cancelled,
             })
         })
-    })
+}
+
+#[tauri::command]
+pub fn get_savings_summary(state: State<AppState>) -> Result<SavingsSummary, String> {
+    with_db(&state, |db| ops_get_savings_summary(db))
 }
 
 #[tauri::command]
@@ -873,39 +811,9 @@ pub fn update_recurring(
 ) -> Result<RecurringTransaction, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut recurring = repository::get_recurring_by_id(conn, &request.id)?;
-
-            if let Some(amount) = request.amount {
-                recurring.amount = amount;
-            }
-            if let Some(description) = request.description {
-                recurring.description = description;
-            }
-            if let Some(category_id) = request.category_id {
-                recurring.category_id = Some(category_id);
-            }
-            if let Some(payee) = request.payee {
-                recurring.payee = Some(payee);
-            }
-            if let Some(frequency) = request.frequency {
-                recurring.frequency = frequency;
-            }
-            if let Some(end_date) = request.end_date {
-                recurring.end_date = Some(end_date);
-            }
-            if let Some(day_of_month) = request.day_of_month {
-                recurring.day_of_month = Some(day_of_month);
-            }
-            if let Some(auto_post) = request.auto_post {
-                recurring.auto_post = auto_post;
-            }
-            if let Some(reminder_days) = request.reminder_days {
-                recurring.reminder_days = Some(reminder_days);
-            }
-            if let Some(is_active) = request.is_active {
-                recurring.is_active = is_active;
-            }
-
+            let id = request.id.clone();
+            let mut recurring = repository::get_recurring_by_id(conn, &id)?;
+            request.apply_to(&mut recurring);
             repository::update_recurring(conn, &recurring)?;
             Ok(recurring)
         })
@@ -919,18 +827,7 @@ pub fn create_goal(
     request: CreateGoalRequest,
 ) -> Result<SavingsGoal, String> {
     with_db(&state, |db| {
-        let mut goal = SavingsGoal::new(request.name, request.goal_type, request.target_amount);
-
-        if let Some(current) = request.current_amount {
-            goal.current_amount = current;
-        }
-        goal.target_date = request.target_date;
-        goal.account_id = request.account_id;
-        if let Some(color) = request.color {
-            goal.color = color;
-        }
-        goal.icon = request.icon;
-        goal.notes = request.notes;
+        let goal = SavingsGoal::from_request(request);
 
         db.with_connection(|conn| {
             repository::create_goal(conn, &goal)?;
@@ -971,36 +868,9 @@ pub fn update_goal(
 ) -> Result<SavingsGoal, String> {
     with_db(&state, |db| {
         db.with_connection(|conn| {
-            let mut goal = repository::get_goal(conn, &request.id)?;
-
-            if let Some(name) = request.name {
-                goal.name = name;
-            }
-            if let Some(target_amount) = request.target_amount {
-                goal.target_amount = target_amount;
-            }
-            if let Some(current_amount) = request.current_amount {
-                goal.current_amount = current_amount;
-            }
-            if let Some(target_date) = request.target_date {
-                goal.target_date = Some(target_date);
-            }
-            if let Some(account_id) = request.account_id {
-                goal.account_id = Some(account_id);
-            }
-            if let Some(color) = request.color {
-                goal.color = color;
-            }
-            if let Some(icon) = request.icon {
-                goal.icon = Some(icon);
-            }
-            if let Some(notes) = request.notes {
-                goal.notes = Some(notes);
-            }
-            if let Some(status) = request.status {
-                goal.status = status;
-            }
-
+            let id = request.id.clone();
+            let mut goal = repository::get_goal(conn, &id)?;
+            request.apply_to(&mut goal);
             repository::update_goal(conn, &goal)?;
             Ok(goal)
         })
@@ -1108,13 +978,14 @@ pub fn import_transactions(
 }
 
 // Report Commands
-#[tauri::command]
-pub fn get_spending_by_category(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_spending_by_category(
+    db: &Database,
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
-) -> Result<Vec<services::reports::SpendingByCategory>, String> {
-    with_db(&state, |db| {
+) -> DbResult<Vec<services::reports::SpendingByCategory>> {
+
         db.with_connection(|conn| {
             let filter = TransactionFilter {
                 account_ids: None,
@@ -1136,17 +1007,25 @@ pub fn get_spending_by_category(
                 &categories,
             ))
         })
-    })
 }
 
 #[tauri::command]
-pub fn get_monthly_trends(
+pub fn get_spending_by_category(
     state: State<AppState>,
+    start_date: Option<NaiveDate>,
+    end_date: Option<NaiveDate>,
+) -> Result<Vec<services::reports::SpendingByCategory>, String> {
+    with_db(&state, |db| ops_get_spending_by_category(db, start_date, end_date))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_monthly_trends(
+    db: &Database,
     months: Option<usize>,
-) -> Result<Vec<services::reports::MonthlyTrend>, String> {
+) -> DbResult<Vec<services::reports::MonthlyTrend>> {
     let months = months.unwrap_or(12);
 
-    with_db(&state, |db| {
         db.with_connection(|conn| {
             let transactions = repository::get_transactions(
                 conn,
@@ -1168,16 +1047,24 @@ pub fn get_monthly_trends(
                 months,
             ))
         })
-    })
 }
 
 #[tauri::command]
-pub fn get_cash_flow_report(
+pub fn get_monthly_trends(
     state: State<AppState>,
+    months: Option<usize>,
+) -> Result<Vec<services::reports::MonthlyTrend>, String> {
+    with_db(&state, |db| ops_get_monthly_trends(db, months))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_cash_flow_report(
+    db: &Database,
     start_date: NaiveDate,
     end_date: NaiveDate,
-) -> Result<services::reports::CashFlowReport, String> {
-    with_db(&state, |db| {
+) -> DbResult<services::reports::CashFlowReport> {
+
         db.with_connection(|conn| {
             let transactions = repository::get_transactions(
                 conn,
@@ -1207,17 +1094,24 @@ pub fn get_cash_flow_report(
                 starting_balance,
             ))
         })
-    })
 }
 
-// Calendar Commands
 #[tauri::command]
-pub fn get_calendar_events(
+pub fn get_cash_flow_report(
     state: State<AppState>,
     start_date: NaiveDate,
     end_date: NaiveDate,
-) -> Result<Vec<CalendarEvent>, String> {
-    with_db(&state, |db| {
+) -> Result<services::reports::CashFlowReport, String> {
+    with_db(&state, |db| ops_get_cash_flow_report(db, start_date, end_date))
+}
+
+// Calendar Commands
+/// One implementation, two entry points.
+pub(crate) fn ops_calendar_events(
+    db: &Database,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> DbResult<Vec<CalendarEvent>> {
         db.with_connection(|conn| {
             let filter = TransactionFilter {
                 account_ids: None,
@@ -1292,15 +1186,24 @@ pub fn get_calendar_events(
             events.sort_by_key(|e| e.date);
             Ok(events)
         })
-    })
+}
+
+#[tauri::command]
+pub fn get_calendar_events(
+    state: State<AppState>,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<Vec<CalendarEvent>, String> {
+    with_db(&state, |db| ops_calendar_events(db, start_date, end_date))
 }
 
 // Auto-Categorize Command
-#[tauri::command]
-pub fn auto_categorize_transactions(
-    state: State<AppState>,
-) -> Result<AutoCategorizeResult, String> {
-    with_db(&state, |db| {
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_auto_categorize_transactions(
+    db: &Database,
+) -> DbResult<AutoCategorizeResult> {
+
         db.with_connection(|conn| {
             // Get all existing categories first - only use valid category IDs
             let categories = repository::get_all_categories(conn)?;
@@ -1367,7 +1270,13 @@ pub fn auto_categorize_transactions(
                 breakdown,
             })
         })
-    })
+}
+
+#[tauri::command]
+pub fn auto_categorize_transactions(
+    state: State<AppState>,
+) -> Result<AutoCategorizeResult, String> {
+    with_db(&state, |db| ops_auto_categorize_transactions(db))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1385,15 +1294,16 @@ pub struct CategoryBreakdown {
 
 // Batch Categorize Command - allows re-categorizing transactions by keyword
 // Also saves the rule for future auto-categorization
-#[tauri::command]
-pub fn batch_categorize_transactions(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_batch_categorize_transactions(
+    db: &Database,
     keyword: String,
     category_id: String,
     match_uncategorized_only: bool,
     save_rule: Option<bool>,
-) -> Result<BatchCategorizeResult, String> {
-    with_db(&state, |db| {
+) -> DbResult<BatchCategorizeResult> {
+
         db.with_connection(|conn| {
             // Verify the category exists
             let _category = repository::get_category(conn, &category_id)
@@ -1443,7 +1353,17 @@ pub fn batch_categorize_transactions(
                 rule_saved,
             })
         })
-    })
+}
+
+#[tauri::command]
+pub fn batch_categorize_transactions(
+    state: State<AppState>,
+    keyword: String,
+    category_id: String,
+    match_uncategorized_only: bool,
+    save_rule: Option<bool>,
+) -> Result<BatchCategorizeResult, String> {
+    with_db(&state, |db| ops_batch_categorize_transactions(db, keyword, category_id, match_uncategorized_only, save_rule))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1454,14 +1374,15 @@ pub struct BatchCategorizeResult {
 }
 
 // Category Rules Commands
-#[tauri::command]
-pub fn create_category_rule(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_create_category_rule(
+    db: &Database,
     category_id: String,
     pattern: String,
     field: Option<String>,
-) -> Result<CategoryRule, String> {
-    with_db(&state, |db| {
+) -> DbResult<CategoryRule> {
+
         let rule = CategoryRule::new(
             category_id,
             pattern,
@@ -1472,19 +1393,38 @@ pub fn create_category_rule(
             repository::create_category_rule(conn, &rule)?;
             Ok(rule)
         })
-    })
+}
+
+#[tauri::command]
+pub fn create_category_rule(
+    state: State<AppState>,
+    category_id: String,
+    pattern: String,
+    field: Option<String>,
+) -> Result<CategoryRule, String> {
+    with_db(&state, |db| ops_create_category_rule(db, category_id, pattern, field))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_category_rules(
+    db: &Database,
+) -> DbResult<Vec<CategoryRule>> {
+
+        db.with_connection(|conn| repository::get_category_rules(conn))
 }
 
 #[tauri::command]
 pub fn get_category_rules(state: State<AppState>) -> Result<Vec<CategoryRule>, String> {
-    with_db(&state, |db| {
-        db.with_connection(|conn| repository::get_category_rules(conn))
-    })
+    with_db(&state, |db| ops_get_category_rules(db))
 }
 
-#[tauri::command]
-pub fn get_user_category_rules(state: State<AppState>) -> Result<Vec<UserCategoryRule>, String> {
-    with_db(&state, |db| {
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_user_category_rules(
+    db: &Database,
+) -> DbResult<Vec<UserCategoryRule>> {
+
         db.with_connection(|conn| {
             let rules = repository::get_user_category_rules(conn)?;
             let categories = repository::get_all_categories(conn)?;
@@ -1505,14 +1445,26 @@ pub fn get_user_category_rules(state: State<AppState>) -> Result<Vec<UserCategor
                 })
                 .collect())
         })
-    })
+}
+
+#[tauri::command]
+pub fn get_user_category_rules(state: State<AppState>) -> Result<Vec<UserCategoryRule>, String> {
+    with_db(&state, |db| ops_get_user_category_rules(db))
+}
+
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_delete_user_category_rule(
+    db: &Database,
+    rule_id: String,
+) -> DbResult<bool> {
+
+        db.with_connection(|conn| repository::delete_user_category_rule(conn, &rule_id))
 }
 
 #[tauri::command]
 pub fn delete_user_category_rule(state: State<AppState>, rule_id: String) -> Result<bool, String> {
-    with_db(&state, |db| {
-        db.with_connection(|conn| repository::delete_user_category_rule(conn, &rule_id))
-    })
+    with_db(&state, |db| ops_delete_user_category_rule(db, rule_id))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1525,14 +1477,14 @@ pub struct UserCategoryRule {
 }
 
 // Notification Commands
-#[tauri::command]
-pub fn get_bill_reminders(
-    state: State<AppState>,
+/// One implementation, two entry points — the Tauri command below and the
+/// boundary handler both call this.
+pub(crate) fn ops_get_bill_reminders(
+    db: &Database,
     days_ahead: Option<i32>,
-) -> Result<Vec<services::notifications::BillReminder>, String> {
+) -> DbResult<Vec<services::notifications::BillReminder>> {
     let days = days_ahead.unwrap_or(7);
 
-    with_db(&state, |db| {
         db.with_connection(|conn| {
             let recurring = repository::get_all_recurring(conn)?;
             let accounts = repository::get_all_accounts(conn)?;
@@ -1550,7 +1502,14 @@ pub fn get_bill_reminders(
                 days,
             ))
         })
-    })
+}
+
+#[tauri::command]
+pub fn get_bill_reminders(
+    state: State<AppState>,
+    days_ahead: Option<i32>,
+) -> Result<Vec<services::notifications::BillReminder>, String> {
+    with_db(&state, |db| ops_get_bill_reminders(db, days_ahead))
 }
 
 #[tauri::command]

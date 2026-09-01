@@ -7,14 +7,14 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use indibudget_lib::boundary::registry::{encode, BoundaryCtx, Registry};
+use indibudget_lib::boundary::registry::Registry;
 use indibudget_lib::boundary::news::{CatchUp, Notice};
 use indibudget_lib::boundary::users::create_user;
-use indibudget_lib::boundary::{Access, Area, BoundaryError, Grants, Request, Required, Response};
+use indibudget_lib::boundary::{Access, Area, Grants, Request, Response};
 use indibudget_lib::database::{repository, Database};
 use indibudget_lib::models::*;
 use indibudget_lib::net::client::Client;
@@ -24,45 +24,10 @@ use indibudget_lib::net::pairing::{list_devices, revoke_device};
 
 // ---------------------------------------------------------------- handlers
 
-fn h_get_accounts(ctx: &BoundaryCtx, _args: Value) -> Result<Value, BoundaryError> {
-    let accounts = ctx
-        .db
-        .with_connection(|conn| repository::get_all_accounts(conn))
-        .map_err(|e| BoundaryError::internal(e.to_string()))?;
-    encode(accounts)
-}
-
-fn h_create_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| BoundaryError::invalid("A category name is required."))?;
-    let category = Category::new(name.to_string(), CategoryType::Expense, "#888888".into());
-    ctx.db
-        .with_connection(|conn| repository::create_category(conn, &category))
-        .map_err(|e| BoundaryError::internal(e.to_string()))?;
-
-    // The shape every swept write will take: announce only after it landed.
-    ctx.shared.news.publish(Notice::RecordChanged {
-        area: Area::Structure,
-        record_kind: "category".into(),
-        record_id: category.id.clone(),
-    });
-    encode(category)
-}
-
 fn test_registry() -> Registry {
-    let mut registry = Registry::new();
-    registry.register("get_accounts", Required::read(Area::Money), h_get_accounts);
-    registry.register(
-        "create_category",
-        Required::write(Area::Structure),
-        h_create_category,
-    );
-    indibudget_lib::boundary::leases::register(&mut registry);
-    indibudget_lib::boundary::news::register(&mut registry);
-    indibudget_lib::boundary::maintenance::register(&mut registry);
-    registry
+    // The registry the host actually serves, so these tests exercise the real
+    // commands rather than stand-ins.
+    indibudget_lib::boundary::commands::build_registry()
 }
 
 // ------------------------------------------------------------------ set-up
@@ -167,7 +132,7 @@ fn a_machine_pairs_signs_in_and_reads_over_tls() {
     assert!(session.is_owner);
 
     let response = client
-        .invoke(Request::new("get_accounts", json!({})))
+        .invoke(Request::new("get_accounts", json!(null)))
         .expect("the call should reach the host");
 
     match response {
@@ -191,7 +156,7 @@ fn the_pin_is_enforced_against_a_different_host() {
     // Connecting to the second host while pinned to the first must fail during
     // the handshake, before any application byte is exchanged.
     let outcome = Client::connect(second.addr(), first_fingerprint)
-        .and_then(|mut c| c.invoke(Request::new("get_accounts", json!({}))));
+        .and_then(|mut c| c.invoke(Request::new("get_accounts", json!(null))));
 
     assert!(
         outcome.is_err(),
@@ -257,7 +222,7 @@ fn commands_are_refused_before_sign_in() {
 
     let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
     let err = client
-        .invoke(Request::new("get_accounts", json!({})))
+        .invoke(Request::new("get_accounts", json!(null)))
         .unwrap_err();
     assert!(err.sentence().contains("sign in"), "{}", err.sentence());
 }
@@ -291,12 +256,12 @@ fn a_members_grants_are_enforced_over_the_wire() {
     client.sign_in(&token, "alex", "Password1").unwrap();
 
     // Alex has Money: Read.
-    let allowed = client.invoke(Request::new("get_accounts", json!({}))).unwrap();
+    let allowed = client.invoke(Request::new("get_accounts", json!(null))).unwrap();
     assert!(allowed.is_ok(), "a read grant should have been honoured");
 
     // Alex has nothing on Structure.
     let refused = client
-        .invoke(Request::new("create_category", json!({ "name": "Sneaky" })))
+        .invoke(Request::new("create_category", json!({ "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     match refused {
         Response::Err { sentence, .. } => {
@@ -330,7 +295,7 @@ fn an_owner_may_do_what_the_member_could_not() {
     client.sign_in(&token, "sam", "Password1").unwrap();
 
     let response = client
-        .invoke(Request::new("create_category", json!({ "name": "Holiday" })))
+        .invoke(Request::new("create_category", json!({ "name": "Holiday", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     assert!(response.is_ok(), "the owner should have been allowed");
 }
@@ -436,10 +401,10 @@ fn two_machines_can_be_paired_and_used_independently() {
     alex.sign_in(&alex_token, "alex", "Password1").unwrap();
 
     // Both connections stay usable at the same time.
-    assert!(sam.invoke(Request::new("get_accounts", json!({}))).unwrap().is_ok());
-    assert!(alex.invoke(Request::new("get_accounts", json!({}))).unwrap().is_ok());
+    assert!(sam.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
+    assert!(alex.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
     assert!(sam
-        .invoke(Request::new("create_category", json!({ "name": "Garden" })))
+        .invoke(Request::new("create_category", json!({ "name": "Garden", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap()
         .is_ok());
 
@@ -458,7 +423,7 @@ fn a_write_made_remotely_is_visible_to_the_host() {
     let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
     client.sign_in(&token, "sam", "Password1").unwrap();
     client
-        .invoke(Request::new("create_category", json!({ "name": "Allotment" })))
+        .invoke(Request::new("create_category", json!({ "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
 
     let found: i64 = fixture
@@ -697,7 +662,7 @@ fn one_persons_write_is_heard_by_another() {
     let mut listener = signed_in_client(&fixture, "sam");
     let start = mark_value(&catch_up(&mut listener, None));
 
-    sam.invoke(Request::new("create_category", json!({ "name": "Allotment" })))
+    sam.invoke(Request::new("create_category", json!({ "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
 
     let result = catch_up(&mut listener, Some(&start));
@@ -710,7 +675,7 @@ fn one_persons_write_is_heard_by_another() {
 
     // And Jo, who cannot read Structure, hears nothing about it.
     let jo_start = mark_value(&catch_up(&mut jo, None));
-    sam.invoke(Request::new("create_category", json!({ "name": "Shed" })))
+    sam.invoke(Request::new("create_category", json!({ "name": "Shed", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     let jo_result = catch_up(&mut jo, Some(&jo_start));
     assert!(
@@ -792,7 +757,7 @@ fn a_refused_write_makes_no_news() {
 
     // Alex has no Structure grant; this is refused.
     let refused = alex
-        .invoke(Request::new("create_category", json!({ "name": "Sneaky" })))
+        .invoke(Request::new("create_category", json!({ "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     assert!(!refused.is_ok());
 
@@ -832,7 +797,7 @@ fn asking_with_no_mark_starts_from_now_rather_than_replaying_history() {
     let fixture = hosted();
     let mut sam = signed_in_client(&fixture, "sam");
 
-    sam.invoke(Request::new("create_category", json!({ "name": "Before" })))
+    sam.invoke(Request::new("create_category", json!({ "name": "Before", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
 
     let mut latecomer = signed_in_client(&fixture, "sam");
@@ -874,7 +839,7 @@ fn a_closed_budget_refuses_writes_and_names_who_closed_it() {
     }
 
     let refused = sam
-        .invoke(Request::new("create_category", json!({ "name": "Blocked" })))
+        .invoke(Request::new("create_category", json!({ "name": "Blocked", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     match refused {
         Response::Err { sentence, .. } => {
@@ -892,7 +857,7 @@ fn reads_keep_working_while_the_budget_is_closed() {
     let mut sam = signed_in_client(&fixture, "sam");
     close_budget(&mut sam);
 
-    let response = sam.invoke(Request::new("get_accounts", json!({}))).unwrap();
+    let response = sam.invoke(Request::new("get_accounts", json!(null))).unwrap();
     assert!(
         response.is_ok(),
         "reading was blocked, which is wider than the reason for closing"
@@ -914,7 +879,7 @@ fn a_closed_budget_can_be_reopened_without_restarting_the_host() {
     );
 
     let response = sam
-        .invoke(Request::new("create_category", json!({ "name": "After" })))
+        .invoke(Request::new("create_category", json!({ "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     assert!(response.is_ok(), "writes should flow again once reopened");
 }
@@ -933,7 +898,7 @@ fn a_different_administrator_can_reopen() {
     );
 
     let response = pat
-        .invoke(Request::new("create_category", json!({ "name": "After" })))
+        .invoke(Request::new("create_category", json!({ "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
         .unwrap();
     assert!(response.is_ok());
 }
