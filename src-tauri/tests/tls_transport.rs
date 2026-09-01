@@ -61,6 +61,7 @@ fn test_registry() -> Registry {
     );
     indibudget_lib::boundary::leases::register(&mut registry);
     indibudget_lib::boundary::news::register(&mut registry);
+    indibudget_lib::boundary::maintenance::register(&mut registry);
     registry
 }
 
@@ -109,6 +110,9 @@ fn hosted() -> Fixture {
             None,
         )
         .unwrap();
+        // A second administrator, so "any administrator may reopen" is a claim
+        // about two different people rather than one.
+        create_user(conn, "pat", "Pat", "Password1", true, &Grants::all(), None).unwrap();
         Ok(())
     })
     .unwrap();
@@ -836,5 +840,186 @@ fn asking_with_no_mark_starts_from_now_rather_than_replaying_history() {
     assert!(
         heard(&result).is_empty(),
         "a screen that just opened was handed a backlog"
+    );
+}
+
+// ----------------------------------------------------- maintenance (phase 6)
+
+fn close_budget(client: &mut Client) -> Response {
+    client
+        .invoke(Request::new("maintenance_close", json!({})))
+        .expect("the call should reach the host")
+}
+
+fn reopen_budget(client: &mut Client) -> Response {
+    client
+        .invoke(Request::new("maintenance_reopen", json!({})))
+        .expect("the call should reach the host")
+}
+
+#[test]
+fn a_closed_budget_refuses_writes_and_names_who_closed_it() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    assert!(close_budget(&mut sam).is_ok());
+
+    match jo.invoke(Request::new("lease_acquire", json!({ "kind": "budget", "record_id": "b1" }))) {
+        Ok(response) => {
+            // Holds sit below Write and are deliberately not gated.
+            assert!(response.is_ok(), "letting go of work should still be possible");
+        }
+        Err(e) => panic!("unexpected transport error: {}", e.sentence()),
+    }
+
+    let refused = sam
+        .invoke(Request::new("create_category", json!({ "name": "Blocked" })))
+        .unwrap();
+    match refused {
+        Response::Err { sentence, .. } => {
+            assert!(sentence.contains("Sam"), "should name the closer: {sentence}");
+            assert!(sentence.contains("maintenance"), "{sentence}");
+        }
+        Response::Ok { .. } => panic!("a write landed while the budget was closed"),
+    }
+}
+
+/// Trap #6: a closed sign is not a blackout.
+#[test]
+fn reads_keep_working_while_the_budget_is_closed() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    close_budget(&mut sam);
+
+    let response = sam.invoke(Request::new("get_accounts", json!({}))).unwrap();
+    assert!(
+        response.is_ok(),
+        "reading was blocked, which is wider than the reason for closing"
+    );
+}
+
+/// The lockout this phase had to be designed around: reopening is itself a
+/// write on Admin, so a naive gate would block the one command that removes
+/// the sign, leaving a restart as the only way back in.
+#[test]
+fn a_closed_budget_can_be_reopened_without_restarting_the_host() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+
+    close_budget(&mut sam);
+    assert!(
+        reopen_budget(&mut sam).is_ok(),
+        "the budget could not be reopened while closed — the gate blocked its own release"
+    );
+
+    let response = sam
+        .invoke(Request::new("create_category", json!({ "name": "After" })))
+        .unwrap();
+    assert!(response.is_ok(), "writes should flow again once reopened");
+}
+
+/// A sign left up by someone who has gone out must not require finding them.
+#[test]
+fn a_different_administrator_can_reopen() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut pat = signed_in_client(&fixture, "pat");
+
+    close_budget(&mut sam);
+    assert!(
+        reopen_budget(&mut pat).is_ok(),
+        "only the closer could reopen, which strands everyone if they go out"
+    );
+
+    let response = pat
+        .invoke(Request::new("create_category", json!({ "name": "After" })))
+        .unwrap();
+    assert!(response.is_ok());
+}
+
+#[test]
+fn a_member_cannot_close_the_budget() {
+    let fixture = hosted();
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    match close_budget(&mut jo) {
+        Response::Err { sentence, .. } => {
+            assert!(sentence.contains("Jo"), "{sentence}");
+            assert!(sentence.contains("Admin"), "{sentence}");
+        }
+        Response::Ok { .. } => panic!("a member closed the budget"),
+    }
+}
+
+#[test]
+fn anyone_can_see_why_their_saves_are_being_refused() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    close_budget(&mut sam);
+
+    let response = jo
+        .invoke(Request::new("maintenance_status", json!({})))
+        .unwrap();
+    match response {
+        Response::Ok { value } => {
+            assert_eq!(value["closed_by"], "Sam");
+        }
+        Response::Err { sentence, .. } => panic!("unexpected refusal: {sentence}"),
+    }
+}
+
+#[test]
+fn both_transitions_ride_the_news_so_the_banner_raises_and_lowers_itself() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    let start = mark_value(&catch_up(&mut jo, None));
+    close_budget(&mut sam);
+
+    let result = catch_up(&mut jo, Some(&start));
+    let notices = heard(&result);
+    assert_eq!(notices.len(), 1);
+    match &notices[0] {
+        Notice::MaintenanceOn { closed_by } => assert_eq!(closed_by, "Sam"),
+        other => panic!("expected MaintenanceOn, got {other:?}"),
+    }
+
+    let mid = mark_value(&result);
+    reopen_budget(&mut sam);
+
+    let result = catch_up(&mut jo, Some(&mid));
+    let notices = heard(&result);
+    assert_eq!(notices.len(), 1);
+    assert!(matches!(notices[0], Notice::MaintenanceOff));
+}
+
+#[test]
+fn closing_twice_leaves_the_first_closer_named_and_makes_no_second_announcement() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut pat = signed_in_client(&fixture, "pat");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    close_budget(&mut sam);
+    let mark = mark_value(&catch_up(&mut jo, None));
+
+    assert!(close_budget(&mut pat).is_ok(), "a second close should be a harmless no-op");
+
+    let status = pat
+        .invoke(Request::new("maintenance_status", json!({})))
+        .unwrap();
+    match status {
+        Response::Ok { value } => assert_eq!(value["closed_by"], "Sam"),
+        Response::Err { sentence, .. } => panic!("unexpected refusal: {sentence}"),
+    }
+
+    let result = catch_up(&mut jo, Some(&mark));
+    assert!(
+        heard(&result).is_empty(),
+        "a no-op close announced itself"
     );
 }

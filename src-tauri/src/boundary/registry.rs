@@ -42,6 +42,10 @@ pub struct Registration {
     pub name: &'static str,
     pub required: Required,
     pub handler: Handler,
+    /// Whether this command still runs while the budget is closed for
+    /// maintenance. True only for the handful that operate the closed sign
+    /// itself — see `register_during_maintenance`.
+    pub allowed_during_maintenance: bool,
 }
 
 #[derive(Default)]
@@ -59,11 +63,40 @@ impl Registry {
     /// Register a command. Panics on a duplicate name — that is a programming
     /// error that should fail at startup, not silently shadow a handler.
     pub fn register(&mut self, name: &'static str, required: Required, handler: Handler) {
-        let registration = Registration {
+        self.insert(Registration {
             name,
             required,
             handler,
-        };
+            allowed_during_maintenance: false,
+        });
+    }
+
+    /// Register a command that keeps working while the budget is closed.
+    ///
+    /// A separate method rather than a flag on `register`, so that the
+    /// exemption is visible at the declaration point and cannot be granted by
+    /// absent-mindedly passing `true`.
+    ///
+    /// This exists because reopening is itself a write on Admin: gated like any
+    /// other write, the one command that removes the closed sign would be
+    /// blocked by it, and a closed budget could only be reopened by restarting
+    /// the host.
+    pub fn register_during_maintenance(
+        &mut self,
+        name: &'static str,
+        required: Required,
+        handler: Handler,
+    ) {
+        self.insert(Registration {
+            name,
+            required,
+            handler,
+            allowed_during_maintenance: true,
+        });
+    }
+
+    fn insert(&mut self, registration: Registration) {
+        let name = registration.name;
         if self.commands.insert(name, registration).is_some() {
             panic!("command \"{name}\" registered twice");
         }
@@ -122,8 +155,14 @@ pub fn dispatch(registry: &Registry, ctx: &BoundaryCtx, request: Request) -> Res
         return Response::err(error);
     }
 
-    // Phase 6 inserts the maintenance gate here, ahead of the handler and
-    // scoped to writes only.
+    // The closed sign, applied after authorization and before the handler.
+    // Scoped to writes, and skipped for the commands that operate the sign
+    // itself.
+    if !registration.allowed_during_maintenance {
+        if let Err(error) = ctx.shared.maintenance.gate(registration.required) {
+            return Response::err(error);
+        }
+    }
 
     Response::from_result((registration.handler)(ctx, request.args))
 }
@@ -312,6 +351,61 @@ mod tests {
         let out = dispatch_json(&registry, &ctx, "{not json at all");
         let response: Response = serde_json::from_str(&out).unwrap();
         assert!(!response.is_ok());
+    }
+
+    #[test]
+    fn a_closed_budget_gates_writes_but_not_reads_at_dispatch() {
+        let registry = test_registry();
+        let db = Database::in_memory().unwrap();
+        let actor = Actor::local_owner();
+        let shared = SharedState::new();
+        shared.maintenance.close(&actor);
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
+
+        let read = dispatch(&registry, &ctx, Request::new("read_money", Value::Null));
+        assert!(read.is_ok(), "a read was gated by the closed sign");
+
+        let write = dispatch(&registry, &ctx, Request::new("write_money", Value::Null));
+        match write {
+            Response::Err { error, .. } => {
+                assert!(matches!(error, BoundaryError::Maintenance { .. }))
+            }
+            Response::Ok { .. } => panic!("a write landed while closed"),
+        }
+    }
+
+    /// Without the exemption, the gate would block the very command that
+    /// removes it, and a closed budget could only be reopened by restarting.
+    #[test]
+    fn an_exempt_command_still_runs_while_closed() {
+        let mut registry = Registry::new();
+        registry.register("ordinary_write", Required::write(Area::Admin), probe);
+        registry.register_during_maintenance("undo_the_sign", Required::write(Area::Admin), probe);
+
+        let db = Database::in_memory().unwrap();
+        let actor = Actor::local_owner();
+        let shared = SharedState::new();
+        shared.maintenance.close(&actor);
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
+
+        assert!(
+            !dispatch(&registry, &ctx, Request::new("ordinary_write", Value::Null)).is_ok(),
+            "an ordinary admin write should be gated"
+        );
+        assert!(
+            dispatch(&registry, &ctx, Request::new("undo_the_sign", Value::Null)).is_ok(),
+            "the exempt command was gated, which would lock the budget closed"
+        );
+    }
+
+    #[test]
+    fn the_exemption_is_off_unless_asked_for() {
+        let mut registry = Registry::new();
+        registry.register("plain", Required::write(Area::Money), probe);
+        assert!(!registry.get("plain").unwrap().allowed_during_maintenance);
+
+        registry.register_during_maintenance("special", Required::write(Area::Money), probe);
+        assert!(registry.get("special").unwrap().allowed_during_maintenance);
     }
 
     #[test]

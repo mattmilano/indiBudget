@@ -17,6 +17,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub mod leases;
+pub mod maintenance;
 pub mod news;
 pub mod registry;
 pub mod users;
@@ -257,7 +258,7 @@ impl Actor {
 pub struct SharedState {
     pub leases: leases::Leases,
     pub news: news::News,
-    // Phase 6 adds the maintenance sign here.
+    pub maintenance: maintenance::Maintenance,
 }
 
 impl SharedState {
@@ -265,6 +266,7 @@ impl SharedState {
         SharedState {
             leases: leases::Leases::new(),
             news: news::News::new(),
+            maintenance: maintenance::Maintenance::new(),
         }
     }
 }
