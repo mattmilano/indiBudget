@@ -17,6 +17,88 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub mod registry;
+pub mod users;
+
+/// Tables the boundary stamps authorship on.
+///
+/// An enum rather than a `&str` because a table name cannot be a bound
+/// parameter — it has to be formatted into the SQL, so the set of possible
+/// values must be closed at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stamped {
+    Accounts,
+    Transactions,
+    Categories,
+    Budgets,
+    SavingsGoals,
+    GoalContributions,
+    RecurringTransactions,
+    CategoryRules,
+    Users,
+}
+
+impl Stamped {
+    pub const fn table(self) -> &'static str {
+        match self {
+            Stamped::Accounts => "accounts",
+            Stamped::Transactions => "transactions",
+            Stamped::Categories => "categories",
+            Stamped::Budgets => "budgets",
+            Stamped::SavingsGoals => "savings_goals",
+            Stamped::GoalContributions => "goal_contributions",
+            Stamped::RecurringTransactions => "recurring_transactions",
+            Stamped::CategoryRules => "category_rules",
+            Stamped::Users => "users",
+        }
+    }
+}
+
+/// Record who wrote a row.
+///
+/// Deliberately explicit rather than a trigger. A trigger would need the
+/// current actor on the connection as per-session state, and there are
+/// legitimate raw connections — the test harness, backup and restore, any
+/// future CLI or salvage path — that carry no such state and would fail on a
+/// trigger referencing it. Calling this from the boundary's write wrappers
+/// costs a line per command during the sweeps and cannot break a raw
+/// connection.
+///
+/// `is_new` distinguishes an insert (stamp both columns) from an update
+/// (stamp only `updated_by`, preserving who originally created the row).
+///
+/// This is itself an UPDATE, so it fires the `row_version` trigger and the
+/// version advances again. That is deliberate and harmless: `row_version` is
+/// an opaque change-detector, not an edit counter. Optimistic concurrency only
+/// ever asks "is this row still the one I read?", and a caller reads the row
+/// after both the write and its stamp have landed, so it holds the settled
+/// value either way.
+///
+/// The rule that keeps this safe is that a stamp never travels alone — it
+/// always accompanies a data write. Stamping a row that was not otherwise
+/// changed would invalidate a version someone is legitimately holding.
+pub fn stamp_write(
+    conn: &rusqlite::Connection,
+    table: Stamped,
+    id: &str,
+    actor: &Actor,
+    is_new: bool,
+) -> Result<(), BoundaryError> {
+    let sql = if is_new {
+        format!(
+            "UPDATE {} SET created_by = ?1, updated_by = ?1 WHERE id = ?2",
+            table.table()
+        )
+    } else {
+        format!(
+            "UPDATE {} SET updated_by = ?1 WHERE id = ?2",
+            table.table()
+        )
+    };
+
+    conn.execute(&sql, rusqlite::params![&actor.user_id, id])
+        .map_err(|e| BoundaryError::internal(format!("Could not record who made that change: {e}")))?;
+    Ok(())
+}
 
 /// The areas indiBudget divides permission by.
 ///

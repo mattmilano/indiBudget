@@ -28,6 +28,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_008_DERIVED_BALANCES, 8),
         (MIGRATION_009_APP_SETTINGS, 9),
         (MIGRATION_010_MULTI_USER_BOUNDARY, 10),
+        (MIGRATION_011_USERS_AND_GRANTS, 11),
     ];
 
     for (sql, version) in migrations {
@@ -336,5 +337,46 @@ const MIGRATION_010_MULTI_USER_BOUNDARY: &str = r#"
     AFTER UPDATE ON category_rules FOR EACH ROW
     BEGIN
         UPDATE category_rules SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
+    END;
+"#;
+
+// Multi-user phase 2: identities.
+//
+// An app password is a gate, not a person. These tables are what let the
+// boundary answer "who is asking?" rather than merely "may anyone in?".
+//
+// `login` is UNIQUE COLLATE NOCASE: people type "Sam" one day and "sam" the
+// next, and two accounts differing only in case would be a standing trap.
+//
+// Grants are stored per area, but an owner's grants are never read from these
+// rows — see `Actor::new`. An owner with no rows here still reaches everything.
+const MIGRATION_011_USERS_AND_GRANTS: &str = r#"
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        login TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_owner INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        row_version INTEGER NOT NULL DEFAULT 1,
+        created_by TEXT,
+        updated_by TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS user_grants (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        area TEXT NOT NULL,
+        access TEXT NOT NULL,
+        PRIMARY KEY (user_id, area)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_grants_user ON user_grants(user_id);
+
+    CREATE TRIGGER IF NOT EXISTS trg_users_row_version
+    AFTER UPDATE ON users FOR EACH ROW
+    BEGIN
+        UPDATE users SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
     END;
 "#;
