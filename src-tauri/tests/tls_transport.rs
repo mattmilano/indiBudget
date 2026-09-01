@@ -51,6 +51,7 @@ fn test_registry() -> Registry {
         Required::write(Area::Structure),
         h_create_category,
     );
+    indibudget_lib::boundary::leases::register(&mut registry);
     registry
 }
 
@@ -86,6 +87,16 @@ fn hosted() -> Fixture {
             false,
             // Deliberately read-only on Money and nothing on Structure.
             &Grants::none().with(Area::Money, Access::Read),
+            None,
+        )
+        .unwrap();
+        create_user(
+            conn,
+            "jo",
+            "Jo",
+            "Password1",
+            false,
+            &Grants::none().with(Area::Planning, Access::Write),
             None,
         )
         .unwrap();
@@ -449,4 +460,185 @@ fn a_write_made_remotely_is_visible_to_the_host() {
         })
         .unwrap();
     assert_eq!(found, 1, "a remote write should have landed in the one database");
+}
+
+// ------------------------------------------------------- edit holds (phase 4)
+
+fn lease(client: &mut Client, command: &str, kind: &str, id: &str) -> Response {
+    client
+        .invoke(Request::new(
+            command,
+            json!({ "kind": kind, "record_id": id }),
+        ))
+        .expect("the call should reach the host")
+}
+
+fn signed_in_client(fixture: &Fixture, login: &str) -> Client {
+    let (token, fingerprint) = pair_a_machine(fixture, login);
+    let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
+    client.sign_in(&token, login, "Password1").unwrap();
+    client
+}
+
+#[test]
+fn a_second_person_opening_the_same_budget_is_told_who_has_it() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    assert!(lease(&mut sam, "lease_acquire", "budget", "b1").is_ok());
+
+    match lease(&mut jo, "lease_acquire", "budget", "b1") {
+        Response::Err { sentence, .. } => {
+            assert!(sentence.contains("Sam"), "should name the holder: {sentence}");
+            assert!(sentence.contains("budget"), "{sentence}");
+        }
+        Response::Ok { .. } => panic!("two people took the same hold"),
+    }
+}
+
+#[test]
+fn releasing_a_hold_lets_the_next_person_in() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "b1");
+    assert!(lease(&mut jo, "lease_acquire", "budget", "b1").is_err_response());
+
+    assert!(lease(&mut sam, "lease_release", "budget", "b1").is_ok());
+    assert!(
+        lease(&mut jo, "lease_acquire", "budget", "b1").is_ok(),
+        "the record should be free once its holder let go"
+    );
+}
+
+#[test]
+fn holds_on_different_budgets_do_not_collide() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    assert!(lease(&mut sam, "lease_acquire", "budget", "groceries").is_ok());
+    assert!(
+        lease(&mut jo, "lease_acquire", "budget", "fuel").is_ok(),
+        "two people editing different budgets must not queue behind each other"
+    );
+}
+
+/// The household case the split exists for: both partners logging receipts at
+/// once must never wait on each other.
+#[test]
+fn transactions_have_no_hold_to_contend_over() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+
+    // "transaction" is not a leasable kind, so the request cannot even be
+    // expressed — the wire enum rejects it.
+    match lease(&mut sam, "lease_acquire", "transaction", "t1") {
+        Response::Err { sentence, .. } => assert!(
+            sentence.contains("not in the expected form"),
+            "{sentence}"
+        ),
+        Response::Ok { .. } => panic!("a transaction was leased"),
+    }
+}
+
+#[test]
+fn someone_without_the_grant_cannot_park_a_hold() {
+    let fixture = hosted();
+    // Alex has Money: Read and nothing on Planning.
+    let mut alex = signed_in_client(&fixture, "alex");
+
+    match lease(&mut alex, "lease_acquire", "budget", "b1") {
+        Response::Err { sentence, .. } => {
+            assert!(sentence.contains("Alex"), "{sentence}");
+            assert!(sentence.contains("Planning"), "{sentence}");
+        }
+        Response::Ok { .. } => {
+            panic!("a read-only member parked a hold on a budget they cannot edit")
+        }
+    }
+}
+
+#[test]
+fn a_holder_can_renew_and_keep_it() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "b1");
+    assert!(lease(&mut sam, "lease_renew", "budget", "b1").is_ok());
+    assert!(lease(&mut jo, "lease_acquire", "budget", "b1").is_err_response());
+}
+
+#[test]
+fn one_person_cannot_release_anothers_hold_over_the_wire() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "b1");
+    lease(&mut jo, "lease_release", "budget", "b1");
+
+    assert!(
+        lease(&mut jo, "lease_acquire", "budget", "b1").is_err_response(),
+        "Jo released a hold belonging to Sam"
+    );
+}
+
+#[test]
+fn holders_can_be_listed_for_badges() {
+    let fixture = hosted();
+    let mut sam = signed_in_client(&fixture, "sam");
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    lease(&mut sam, "lease_acquire", "budget", "groceries");
+
+    let response = jo
+        .invoke(Request::new("lease_holders", json!({ "kind": "budget" })))
+        .unwrap();
+    match response {
+        Response::Ok { value } => {
+            let held = value.as_array().unwrap();
+            assert_eq!(held.len(), 1);
+            assert_eq!(held[0]["record_id"], "groceries");
+            assert_eq!(held[0]["holder"], "Sam");
+        }
+        Response::Err { sentence, .. } => panic!("unexpected refusal: {sentence}"),
+    }
+}
+
+/// A laptop that closed its lid should not hold the grocery budget for the
+/// rest of the lease.
+#[test]
+fn a_dropped_connection_gives_up_its_holds() {
+    let fixture = hosted();
+    let mut jo = signed_in_client(&fixture, "jo");
+
+    {
+        let mut sam = signed_in_client(&fixture, "sam");
+        lease(&mut sam, "lease_acquire", "budget", "b1");
+        assert!(lease(&mut jo, "lease_acquire", "budget", "b1").is_err_response());
+    } // Sam's client drops here, closing the connection.
+
+    // Give the host's connection thread a moment to notice and clean up.
+    for _ in 0..50 {
+        if lease(&mut jo, "lease_acquire", "budget", "b1").is_ok() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("a closed connection left its holds behind");
+}
+
+/// Small helper so the assertions above read as intent rather than matching.
+trait ResponseExt {
+    fn is_err_response(&self) -> bool;
+}
+
+impl ResponseExt for Response {
+    fn is_err_response(&self) -> bool {
+        !self.is_ok()
+    }
 }

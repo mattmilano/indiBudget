@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use super::{authorize, Actor, BoundaryError, Request, Required, Response};
+use super::{authorize, Actor, BoundaryError, Request, Required, Response, SharedState};
 use crate::database::Database;
 
 /// What a handler is given: the open database and who is asking.
@@ -26,11 +26,12 @@ use crate::database::Database;
 pub struct BoundaryCtx<'a> {
     pub db: &'a Database,
     pub actor: &'a Actor,
+    pub shared: &'a SharedState,
 }
 
 impl<'a> BoundaryCtx<'a> {
-    pub fn new(db: &'a Database, actor: &'a Actor) -> Self {
-        BoundaryCtx { db, actor }
+    pub fn new(db: &'a Database, actor: &'a Actor, shared: &'a SharedState) -> Self {
+        BoundaryCtx { db, actor, shared }
     }
 }
 
@@ -170,7 +171,8 @@ mod tests {
         let registry = test_registry();
         let db = Database::in_memory().unwrap();
         let actor = Actor::local_owner();
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         let response = dispatch(&registry, &ctx, Request::new("export_backup", Value::Null));
         match response {
@@ -189,7 +191,8 @@ mod tests {
         let registry = test_registry();
         let db = Database::in_memory().unwrap();
         let actor = Actor::new("u".into(), "Alex".into(), false, Grants::none());
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         let response = dispatch(&registry, &ctx, Request::new("no_such_command", Value::Null));
         match response {
@@ -210,7 +213,8 @@ mod tests {
             false,
             Grants::none().with(Area::Money, Access::Read),
         );
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         assert!(dispatch(&registry, &ctx, Request::new("read_money", Value::Null)).is_ok());
 
@@ -237,7 +241,8 @@ mod tests {
 
         // A no-grants actor is refused at every door, with the grant sentence.
         let nobody = Actor::new("u0".into(), "Nobody".into(), false, Grants::none());
-        let ctx = BoundaryCtx::new(&db, &nobody);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &nobody, &shared);
         for name in registry.names() {
             let response = dispatch(&registry, &ctx, Request::new(*name, Value::Null));
             match response {
@@ -258,7 +263,7 @@ mod tests {
         // Null arguments never panic. An owner reaches every handler, so this
         // exercises the handler bodies rather than stopping at authorization.
         let owner = Actor::local_owner();
-        let ctx = BoundaryCtx::new(&db, &owner);
+        let ctx = BoundaryCtx::new(&db, &owner, &shared);
         for name in registry.names() {
             let _ = dispatch(&registry, &ctx, Request::new(*name, Value::Null));
         }
@@ -269,7 +274,8 @@ mod tests {
         let registry = test_registry();
         let db = Database::in_memory().unwrap();
         let actor = Actor::local_owner();
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         let response = dispatch(&registry, &ctx, Request::new("always_fails", Value::Null));
         match response {
@@ -283,7 +289,8 @@ mod tests {
         let registry = test_registry();
         let db = Database::in_memory().unwrap();
         let actor = Actor::local_owner();
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         let raw = r#"{"command":"read_money","args":{"hello":"world"}}"#;
         let out = dispatch_json(&registry, &ctx, raw);
@@ -299,7 +306,8 @@ mod tests {
         let registry = test_registry();
         let db = Database::in_memory().unwrap();
         let actor = Actor::local_owner();
-        let ctx = BoundaryCtx::new(&db, &actor);
+        let shared = SharedState::new();
+        let ctx = BoundaryCtx::new(&db, &actor, &shared);
 
         let out = dispatch_json(&registry, &ctx, "{not json at all");
         let response: Response = serde_json::from_str(&out).unwrap();

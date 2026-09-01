@@ -25,7 +25,7 @@ use super::protocol::{ClientMessage, ServerMessage};
 use super::throttle::Throttle;
 use crate::boundary::registry::{dispatch, BoundaryCtx, Registry};
 use crate::boundary::users::authenticate;
-use crate::boundary::{Actor, BoundaryError};
+use crate::boundary::{Actor, BoundaryError, SharedState};
 use crate::database::Database;
 
 /// Everything a connection thread needs.
@@ -33,6 +33,9 @@ pub struct HostState {
     pub db: Arc<Database>,
     pub registry: Arc<Registry>,
     pub identity: HostIdentity,
+    /// Edit holds and, from phase 5, the news ring. Shared by every session so
+    /// that a hold taken at the hosting machine blocks a laptop and vice versa.
+    pub shared: SharedState,
     pairing: Mutex<Option<PairingWindow>>,
     throttle: Throttle,
 }
@@ -43,6 +46,7 @@ impl HostState {
             db,
             registry,
             identity,
+            shared: SharedState::new(),
             pairing: Mutex::new(None),
             throttle: Throttle::new(),
         }
@@ -255,7 +259,7 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
 
     loop {
         let Ok(raw) = read_frame(&mut tls) else {
-            return; // peer went away, or a bad frame — either way, done
+            break; // peer went away, or a bad frame — either way, done
         };
 
         let reply = match serde_json::from_str::<ClientMessage>(&raw) {
@@ -264,11 +268,18 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
         };
 
         let Ok(encoded) = serde_json::to_string(&reply) else {
-            return;
+            break;
         };
         if write_frame(&mut tls, &encoded).is_err() {
-            return;
+            break;
         }
+    }
+
+    // A machine that closed its lid should not leave the grocery budget held
+    // for the rest of the lease. Passive expiry would clear it eventually;
+    // this clears it now.
+    if let Some(actor) = actor.as_ref() {
+        state.shared.leases.release_everything_for(actor);
     }
 }
 
@@ -308,7 +319,7 @@ fn handle_message(
 
             // The identity used here comes from the connection, never from the
             // request body, so no client can name itself administrator.
-            let ctx = BoundaryCtx::new(&state.db, signed_in);
+            let ctx = BoundaryCtx::new(&state.db, signed_in, &state.shared);
             ServerMessage::Reply {
                 response: dispatch(&state.registry, &ctx, request),
             }

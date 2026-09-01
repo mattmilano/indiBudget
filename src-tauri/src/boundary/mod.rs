@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+pub mod leases;
 pub mod registry;
 pub mod users;
 
@@ -246,6 +247,25 @@ impl Actor {
     }
 }
 
+/// State the hosting process keeps in memory, shared by every session.
+///
+/// Held here rather than in the transport so that the local session and a
+/// network session reach exactly the same holds — a lease taken at the hosting
+/// machine must block a laptop, and vice versa.
+#[derive(Debug, Default)]
+pub struct SharedState {
+    pub leases: leases::Leases,
+    // Phase 5 adds the news ring here; phase 6 the maintenance sign.
+}
+
+impl SharedState {
+    pub fn new() -> Self {
+        SharedState {
+            leases: leases::Leases::new(),
+        }
+    }
+}
+
 /// What a command touches. Stated at registration — a command cannot enter the
 /// registry without declaring this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,6 +286,21 @@ impl Required {
         Required {
             area,
             access: Access::Write,
+        }
+    }
+
+    /// Passable by any signed-in actor.
+    ///
+    /// Only for commands whose real authorization depends on their arguments
+    /// and therefore cannot be stated once at registration — the edit-hold
+    /// commands, where the area follows from which kind of record is being
+    /// held. Such a handler MUST call `authorize` itself; this constructor is
+    /// not a way to skip the check, only to defer it to where the answer is
+    /// knowable.
+    pub const fn signed_in() -> Self {
+        Required {
+            area: Area::Money,
+            access: Access::None,
         }
     }
 }
