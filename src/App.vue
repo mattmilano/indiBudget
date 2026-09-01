@@ -11,7 +11,7 @@ const sidebarOpen = ref(true);
 const showAgreement = ref(false);
 const appReady = ref(false);
 
-const CURRENT_AGREEMENT_VERSION = '1.0';
+const CURRENT_AGREEMENT_VERSION = '1.1';
 
 onMounted(async () => {
   try {

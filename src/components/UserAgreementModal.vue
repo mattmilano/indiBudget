@@ -12,14 +12,14 @@ const emit = defineEmits<{
 
 const agreementText = ref('');
 const scrolledToBottom = ref(false);
-const agreementVersion = '1.0';
+const agreementVersion = '1.1';
 
 const scrollContainer = ref<HTMLElement | null>(null);
 
 onMounted(async () => {
   agreementText.value = `# indiBudget User Agreement
 
-**Version 1.0 — Effective June 2026**
+**Version 1.1 — Effective September 2026**
 
 This is a legal agreement between you (the "User") and Indomitus Group ("Company"), developed by Matt Milano. By using the indiBudget application as distributed by Indomitus Group, you agree to these terms. This agreement applies to the distributed application only — the indiBudget source code is licensed separately under the MIT License (see Section 2).
 
@@ -98,11 +98,13 @@ You agree to defend, indemnify, and hold harmless Indomitus Group and Matt Milan
 ## 6. Data Privacy
 
 indiBudget is designed with privacy in mind:
-- All your financial data is stored locally on your device
-- No data is transmitted to Indomitus Group or any third party
+- Your financial data is stored on hardware you own and control
+- No data is transmitted to Indomitus Group, and we operate no server that your data passes through
+- With sharing switched off, which is how indiBudget starts, your data never leaves the computer it is stored on
+- If you switch sharing on, your data travels between your own computers over your own local network, encrypted in transit. It still reaches no third party
 - Optional bank sync via SimpleFIN is between you and SimpleFIN — your credentials never touch indiBudget
 
-You are responsible for securing your device and any backups of your data.
+You are responsible for securing your devices, your local network, and any backups of your data. If you share a budget across computers, you are responsible for who you give access to.
 
 ---
 

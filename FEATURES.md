@@ -77,7 +77,9 @@
 - Duplicate-aware imports with progress reporting
 
 ## Security & Privacy
-- **100% local-first** — your data never leaves your device
+- **Local-first** — your data lives on hardware you own. There is no cloud account, no server of ours, and nothing is ever sent to us or to any third party.
+- With sharing switched off, which is the default, your data never leaves the computer it is on
+- With sharing switched on, it travels only between your own computers, over your own network, encrypted with TLS — still never to a cloud service
 - Optional **AES-256-GCM encryption** for data at rest
 - **Argon2id key derivation** (64 MB / 3 iterations / 256-bit) — resistant to brute-force attacks
 - Password strength enforcement, lock/unlock, and password change
