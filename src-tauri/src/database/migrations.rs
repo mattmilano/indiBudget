@@ -29,6 +29,7 @@ pub fn run_all(conn: &Connection) -> DbResult<()> {
         (MIGRATION_009_APP_SETTINGS, 9),
         (MIGRATION_010_MULTI_USER_BOUNDARY, 10),
         (MIGRATION_011_USERS_AND_GRANTS, 11),
+        (MIGRATION_012_PAIRED_DEVICES, 12),
     ];
 
     for (sql, version) in migrations {
@@ -379,4 +380,28 @@ const MIGRATION_011_USERS_AND_GRANTS: &str = r#"
     BEGIN
         UPDATE users SET row_version = OLD.row_version + 1 WHERE id = NEW.id;
     END;
+"#;
+
+// Multi-user phase 3: paired machines.
+//
+// Two credentials answer two different questions. A device token answers "was
+// this machine deliberately added?"; a login and password answer "who is
+// sitting at it?". Keeping them separate is what makes the levers safe: a
+// stolen laptop can be revoked without anyone changing a password, and someone
+// leaving can be deactivated without re-pairing every machine.
+//
+// Only the SHA-256 of a token is stored. The token itself is written once to
+// the machine that paired and never touches the host's disk, so a copy of the
+// host database does not yield a working credential.
+const MIGRATION_012_PAIRED_DEVICES: &str = r#"
+    CREATE TABLE IF NOT EXISTS devices (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        paired_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        is_revoked INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_devices_token_hash ON devices(token_hash);
 "#;

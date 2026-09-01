@@ -38,3 +38,14 @@ argon2 = "0.5"
 rand = "0.8"
 regex = "1.10"
 base64 = "0.22"
+
+# Multi-user transport (phase 3).
+# rustls is pinned to the `ring` provider deliberately: the aws-lc-rs provider
+# drags in cmake and NASM as build dependencies and makes Windows builds
+# miserable. default-features are off so `aws-lc-rs` is not pulled in as the
+# default provider.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pki-types = "1"
+rcgen = "0.13"
+sha2 = "0.10"
+hex = "0.4"

@@ -2,6 +2,7 @@ pub mod boundary;
 pub mod commands;
 pub mod database;
 pub mod models;
+pub mod net;
 pub mod services;
 
 use commands::AppState;
