@@ -20,15 +20,32 @@ struct ById {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Dated {
     start_date: chrono::NaiveDate,
     end_date: chrono::NaiveDate,
 }
 
+/// The envelope the app already sends.
+///
+/// `api.ts` calls `invoke('create_account', { request })`, and that same call
+/// must work whether it is dispatched locally or forwarded to a host. Rather
+/// than reshaping seventy call sites, the boundary accepts the shape the app
+/// already speaks.
+#[derive(Debug, Deserialize)]
+struct Wrapped<T> {
+    request: T,
+}
+
+#[derive(Debug, Deserialize)]
+struct Filtered {
+    filter: TransactionFilter,
+}
+
 // ------------------------------------------------------------- accounts
 
 fn h_create_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: CreateAccountRequest = decode(args)?;
+    let request: CreateAccountRequest = decode::<Wrapped<_>>(args)?.request;
     // The same mapping the local screen uses, so the two cannot drift.
     let account = Account::from_request(request);
 
@@ -66,7 +83,7 @@ fn h_get_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError>
 }
 
 fn h_update_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateAccountRequest = decode(args.clone())?;
+    let request: UpdateAccountRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::Accounts, "account", &request.id)?;
 
     let id = request.id.clone();
@@ -107,7 +124,7 @@ fn h_delete_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErr
 // --------------------------------------------------------- transactions
 
 fn h_create_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: CreateTransactionRequest = decode(args)?;
+    let request: CreateTransactionRequest = decode::<Wrapped<_>>(args)?.request;
     let tx = Transaction::from_request(request);
 
     ctx.db
@@ -130,7 +147,7 @@ fn h_create_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, Boundar
 }
 
 fn h_get_transactions(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let filter: TransactionFilter = decode(args)?;
+    let filter = decode::<Filtered>(args)?.filter;
     ok(ctx
         .db
         .with_connection(|conn| repository::get_transactions(conn, &filter))
@@ -150,7 +167,7 @@ fn h_get_transaction_count(ctx: &BoundaryCtx, _args: Value) -> Result<Value, Bou
 }
 
 fn h_update_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateTransactionRequest = decode(args.clone())?;
+    let request: UpdateTransactionRequest = decode::<Wrapped<_>>(args.clone())?.request;
     // Transactions have no edit hold, so this optimistic check is the only
     // thing standing between two people editing the same row.
     guard_version(ctx, &args, Stamped::Transactions, "transaction", &request.id)?;
@@ -190,7 +207,7 @@ fn h_delete_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, Boundar
 }
 
 fn h_create_transfer(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: CreateTransferRequest = decode(args)?;
+    let request: CreateTransferRequest = decode::<Wrapped<_>>(args)?.request;
     // The shared implementation, so a transfer from a laptop takes the same
     // path as one made at the host.
     let result = crate::commands::ops_create_transfer(ctx.db, request)

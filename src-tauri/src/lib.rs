@@ -19,6 +19,17 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             // Initialization
+            // Multi-user: hosting and connecting. Local-only by design — none
+            // of these are registered in the boundary registry.
+            commands::multiuser::hosting_status,
+            commands::multiuser::start_hosting,
+            commands::multiuser::stop_hosting,
+            commands::multiuser::open_pairing,
+            commands::multiuser::close_pairing,
+            commands::multiuser::pair_with_host,
+            commands::multiuser::connect_to_host,
+            commands::multiuser::disconnect_from_host,
+            commands::multiuser::boundary_invoke,
             commands::init_app,
             commands::get_database_path,
             commands::get_transaction_count,

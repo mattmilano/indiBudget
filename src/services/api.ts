@@ -1,4 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
+// Every call goes through the one door in lib/rpc, which decides whether it
+// runs against this machine or travels to the computer hosting the budget.
+import { invoke } from '../lib/rpc';
 import type {
   Account,
   CreateAccountRequest,
@@ -346,3 +348,57 @@ export const importSingleTransaction = async (
 
   return { imported: true, duplicate: false, transaction };
 };
+
+// ---------------------------------------------------------------------------
+// Multi-user: edit holds, the news beat, people and machines.
+// ---------------------------------------------------------------------------
+
+export const leaseAcquire = (kind: string, recordId: string) =>
+  invoke<{ held: boolean }>('lease_acquire', { kind, recordId });
+
+export const leaseRenew = (kind: string, recordId: string) =>
+  invoke<{ held: boolean }>('lease_renew', { kind, recordId });
+
+export const leaseRelease = (kind: string, recordId: string) =>
+  invoke<{ held: boolean }>('lease_release', { kind, recordId });
+
+export const leaseHolders = (kind: string) =>
+  invoke<{ recordId: string; holder: string }[]>('lease_holders', { kind });
+
+export const newsCatchUp = (mark: { run: string; seq: number } | null) =>
+  invoke<
+    | { status: 'notices'; notices: any[]; mark: { run: string; seq: number } }
+    | { status: 'start_over'; mark: { run: string; seq: number } }
+  >('news_catch_up', { mark });
+
+export const listUsers = () => invoke<any[]>('list_users');
+
+export const createPerson = (request: {
+  login: string;
+  displayName: string;
+  password: string;
+  isOwner: boolean;
+  grants: Record<string, string>;
+}) => invoke<any>('create_user', request);
+
+export const setUserGrants = (userId: string, grants: Record<string, string>) =>
+  invoke<{ updated: boolean }>('set_user_grants', { userId, grants });
+
+export const setUserActive = (userId: string, isActive: boolean) =>
+  invoke<{ updated: boolean }>('set_user_active', { userId, isActive });
+
+export const changeUserPassword = (userId: string, newPassword: string) =>
+  invoke<{ updated: boolean }>('change_user_password', { userId, newPassword });
+
+export const listDevices = () => invoke<any[]>('list_devices');
+
+export const revokeDevice = (deviceId: string) =>
+  invoke<{ revoked: boolean }>('revoke_device', { deviceId });
+
+export const maintenanceStatus = () =>
+  invoke<{ closed_by: string; closed_by_id: string; closed_at: string } | null>(
+    'maintenance_status'
+  );
+
+export const maintenanceClose = () => invoke<any>('maintenance_close');
+export const maintenanceReopen = () => invoke<{ closed: boolean }>('maintenance_reopen');

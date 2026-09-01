@@ -17,6 +17,11 @@ use crate::database::repository;
 use crate::models::*;
 
 #[derive(Debug, Deserialize)]
+struct Wrapped<T> {
+    request: T,
+}
+
+#[derive(Debug, Deserialize)]
 struct ById {
     id: String,
 }
@@ -31,7 +36,7 @@ fn h_get_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError
 }
 
 fn h_create_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let category = Category::from_request(decode(args)?);
+    let category = Category::from_request(decode::<Wrapped<_>>(args)?.request);
     ctx.db.with_connection(|c| repository::create_category(c, &category)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::Categories, area: Area::Structure,
         record_kind: "category", id: &category.id, is_new: true, leasable: Some(Leasable::Category) })?;
@@ -39,7 +44,7 @@ fn h_create_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryEr
 }
 
 fn h_update_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateCategoryRequest = decode(args.clone())?;
+    let request: UpdateCategoryRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::Categories, "category", &request.id)?;
     let id = request.id.clone();
     let category = ctx.db.with_connection(|conn| {
@@ -71,6 +76,7 @@ fn h_get_user_category_rules(ctx: &BoundaryCtx, _a: Value) -> Result<Value, Boun
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RuleArgs {
     category_id: String,
     pattern: String,
@@ -88,6 +94,7 @@ fn h_create_category_rule(ctx: &BoundaryCtx, args: Value) -> Result<Value, Bound
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RuleId {
     rule_id: String,
 }
@@ -111,6 +118,7 @@ fn h_auto_categorize(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryErro
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct BatchArgs {
     keyword: String,
     category_id: String,

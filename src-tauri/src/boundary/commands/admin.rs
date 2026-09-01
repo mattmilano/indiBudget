@@ -15,6 +15,7 @@ use crate::boundary::{Area, BoundaryError, Grants, Required};
 use crate::net::pairing;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct NewUser {
     login: String,
     display_name: String,
@@ -26,24 +27,28 @@ struct NewUser {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UserGrants {
     user_id: String,
     grants: Grants,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UserActive {
     user_id: String,
     is_active: bool,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UserPassword {
     user_id: String,
     new_password: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DeviceId {
     device_id: String,
 }

@@ -22,22 +22,37 @@ struct ById {
     id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct Wrapped<T> {
+    request: T,
+}
+
+#[derive(Debug, Deserialize)]
+struct Detected {
+    detected: crate::services::recurring_detector::DetectedRecurring,
+}
+
 #[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct AsOf {
     #[serde(default)]
     as_of_date: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct Days {
     #[serde(default)]
     days: Option<i32>,
+    /// `get_bill_reminders` names the same idea differently in the app.
+    #[serde(default)]
+    days_ahead: Option<i32>,
 }
 
 // -------------------------------------------------------------- budgets
 
 fn h_create_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let budget = Budget::from_request(decode(args)?);
+    let budget = Budget::from_request(decode::<Wrapped<_>>(args)?.request);
     ctx.db
         .with_connection(|conn| repository::create_budget(conn, &budget))
         .map_err(db_err)?;
@@ -56,7 +71,7 @@ fn h_get_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> 
 }
 
 fn h_update_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateBudgetRequest = decode(args.clone())?;
+    let request: UpdateBudgetRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::Budgets, "budget", &request.id)?;
     let id = request.id.clone();
     let budget = ctx.db.with_connection(|conn| {
@@ -85,7 +100,7 @@ fn h_budget_status(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErro
 // ---------------------------------------------------------------- goals
 
 fn h_create_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let goal = SavingsGoal::from_request(decode(args)?);
+    let goal = SavingsGoal::from_request(decode::<Wrapped<_>>(args)?.request);
     ctx.db.with_connection(|c| repository::create_goal(c, &goal)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::SavingsGoals, area: Area::Planning,
         record_kind: "goal", id: &goal.id, is_new: true, leasable: Some(Leasable::Goal) })?;
@@ -102,7 +117,7 @@ fn h_get_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
 }
 
 fn h_update_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateGoalRequest = decode(args.clone())?;
+    let request: UpdateGoalRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::SavingsGoals, "goal", &request.id)?;
     let id = request.id.clone();
     let goal = ctx.db.with_connection(|conn| {
@@ -117,6 +132,7 @@ fn h_update_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError>
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GoalProgressArgs {
     id: String,
     amount: rust_decimal::Decimal,
@@ -141,7 +157,7 @@ fn h_delete_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError>
 // ------------------------------------------------------------ recurring
 
 fn h_create_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let recurring = RecurringTransaction::from_request(decode(args)?);
+    let recurring = RecurringTransaction::from_request(decode::<Wrapped<_>>(args)?.request);
     ctx.db.with_connection(|c| repository::create_recurring(c, &recurring)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &recurring.id, is_new: true, leasable: None })?;
@@ -158,7 +174,7 @@ fn h_get_recurring_by_id(ctx: &BoundaryCtx, args: Value) -> Result<Value, Bounda
 }
 
 fn h_update_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let request: UpdateRecurringRequest = decode(args.clone())?;
+    let request: UpdateRecurringRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::RecurringTransactions, "recurring payment", &request.id)?;
     let id = request.id.clone();
     let recurring = ctx.db.with_connection(|conn| {
@@ -182,7 +198,7 @@ fn h_detect_patterns(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryErro
 }
 
 fn h_create_from_detected(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
-    let detected = decode(args)?;
+    let detected = decode::<Detected>(args)?.detected;
     let created = ops::ops_create_recurring_from_detected(ctx.db, detected).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &created.id, is_new: true, leasable: None })?;
@@ -190,6 +206,7 @@ fn h_create_from_detected(ctx: &BoundaryCtx, args: Value) -> Result<Value, Bound
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CancelArgs {
     id: String,
     #[serde(default)]
@@ -213,7 +230,7 @@ fn h_savings_summary(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryErro
 
 fn h_bill_reminders(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
     let a: Days = decode(args).unwrap_or_default();
-    ok(ops::ops_get_bill_reminders(ctx.db, a.days).map_err(db_err)?)
+    ok(ops::ops_get_bill_reminders(ctx.db, a.days_ahead.or(a.days)).map_err(db_err)?)
 }
 
 pub fn register(r: &mut Registry) {

@@ -746,6 +746,7 @@ impl From<LeasableWire> for Leasable {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LeaseArgs {
     kind: LeasableWire,
     record_id: String,
@@ -757,6 +758,7 @@ struct HoldersArgs {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Holder {
     record_id: String,
     holder: String,

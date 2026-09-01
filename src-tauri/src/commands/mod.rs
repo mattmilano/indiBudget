@@ -73,9 +73,16 @@ fn validate_write_path(path: &str) -> Result<PathBuf, String> {
     Ok(path_buf)
 }
 
+pub mod multiuser;
+
 pub struct AppState {
-    pub db: Mutex<Option<Database>>,
+    pub db: Mutex<Option<std::sync::Arc<Database>>>,
     pub encryption: Mutex<Option<EncryptionService>>,
+    /// Edit holds and the news ring, shared with the hosting process when this
+    /// machine is hosting. One set, always — see `multiuser::boundary_invoke`.
+    pub shared: std::sync::Arc<crate::boundary::SharedState>,
+    pub registry: std::sync::Arc<crate::boundary::registry::Registry>,
+    pub multi_user: multiuser::MultiUser,
 }
 
 impl AppState {
@@ -83,6 +90,9 @@ impl AppState {
         Self {
             db: Mutex::new(None),
             encryption: Mutex::new(None),
+            shared: std::sync::Arc::new(crate::boundary::SharedState::new()),
+            registry: std::sync::Arc::new(crate::boundary::commands::build_registry()),
+            multi_user: multiuser::MultiUser::new(),
         }
     }
 
@@ -95,7 +105,7 @@ impl AppState {
             .db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *db_guard = Some(db);
+        *db_guard = Some(std::sync::Arc::new(db));
         drop(db_guard);
 
         // Initialize encryption service
@@ -122,7 +132,7 @@ where
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = guard.as_ref().ok_or("Database not initialized")?;
-    f(db)
+    f(db.as_ref())
 }
 
 fn with_db<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
@@ -135,7 +145,7 @@ where
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = guard.as_ref().ok_or("Database not initialized")?;
-    f(db).map_err(|e| e.to_string())
+    f(db.as_ref()).map_err(|e| e.to_string())
 }
 
 fn with_encryption<F, T>(state: &State<AppState>, f: F) -> Result<T, String>

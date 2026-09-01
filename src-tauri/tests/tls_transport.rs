@@ -98,6 +98,7 @@ fn hosted() -> Fixture {
         Arc::clone(&db),
         Arc::new(test_registry()),
         identity,
+        Arc::new(indibudget_lib::boundary::SharedState::new()),
     ));
     let host = host::start(Arc::clone(&state), "127.0.0.1:0".parse().unwrap()).expect("host starts");
 
@@ -261,7 +262,7 @@ fn a_members_grants_are_enforced_over_the_wire() {
 
     // Alex has nothing on Structure.
     let refused = client
-        .invoke(Request::new("create_category", json!({ "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     match refused {
         Response::Err { sentence, .. } => {
@@ -295,7 +296,7 @@ fn an_owner_may_do_what_the_member_could_not() {
     client.sign_in(&token, "sam", "Password1").unwrap();
 
     let response = client
-        .invoke(Request::new("create_category", json!({ "name": "Holiday", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Holiday", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     assert!(response.is_ok(), "the owner should have been allowed");
 }
@@ -404,7 +405,7 @@ fn two_machines_can_be_paired_and_used_independently() {
     assert!(sam.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
     assert!(alex.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
     assert!(sam
-        .invoke(Request::new("create_category", json!({ "name": "Garden", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Garden", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap()
         .is_ok());
 
@@ -423,7 +424,7 @@ fn a_write_made_remotely_is_visible_to_the_host() {
     let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
     client.sign_in(&token, "sam", "Password1").unwrap();
     client
-        .invoke(Request::new("create_category", json!({ "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
 
     let found: i64 = fixture
@@ -446,7 +447,7 @@ fn lease(client: &mut Client, command: &str, kind: &str, id: &str) -> Response {
     client
         .invoke(Request::new(
             command,
-            json!({ "kind": kind, "record_id": id }),
+            json!({ "kind": kind, "recordId": id }),
         ))
         .expect("the call should reach the host")
 }
@@ -580,7 +581,7 @@ fn holders_can_be_listed_for_badges() {
         Response::Ok { value } => {
             let held = value.as_array().unwrap();
             assert_eq!(held.len(), 1);
-            assert_eq!(held[0]["record_id"], "groceries");
+            assert_eq!(held[0]["recordId"], "groceries");
             assert_eq!(held[0]["holder"], "Sam");
         }
         Response::Err { sentence, .. } => panic!("unexpected refusal: {sentence}"),
@@ -662,7 +663,7 @@ fn one_persons_write_is_heard_by_another() {
     let mut listener = signed_in_client(&fixture, "sam");
     let start = mark_value(&catch_up(&mut listener, None));
 
-    sam.invoke(Request::new("create_category", json!({ "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+    sam.invoke(Request::new("create_category", json!({ "request": { "name": "Allotment", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
 
     let result = catch_up(&mut listener, Some(&start));
@@ -675,7 +676,7 @@ fn one_persons_write_is_heard_by_another() {
 
     // And Jo, who cannot read Structure, hears nothing about it.
     let jo_start = mark_value(&catch_up(&mut jo, None));
-    sam.invoke(Request::new("create_category", json!({ "name": "Shed", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+    sam.invoke(Request::new("create_category", json!({ "request": { "name": "Shed", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     let jo_result = catch_up(&mut jo, Some(&jo_start));
     assert!(
@@ -757,7 +758,7 @@ fn a_refused_write_makes_no_news() {
 
     // Alex has no Structure grant; this is refused.
     let refused = alex
-        .invoke(Request::new("create_category", json!({ "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Sneaky", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     assert!(!refused.is_ok());
 
@@ -797,7 +798,7 @@ fn asking_with_no_mark_starts_from_now_rather_than_replaying_history() {
     let fixture = hosted();
     let mut sam = signed_in_client(&fixture, "sam");
 
-    sam.invoke(Request::new("create_category", json!({ "name": "Before", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+    sam.invoke(Request::new("create_category", json!({ "request": { "name": "Before", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
 
     let mut latecomer = signed_in_client(&fixture, "sam");
@@ -830,7 +831,7 @@ fn a_closed_budget_refuses_writes_and_names_who_closed_it() {
 
     assert!(close_budget(&mut sam).is_ok());
 
-    match jo.invoke(Request::new("lease_acquire", json!({ "kind": "budget", "record_id": "b1" }))) {
+    match jo.invoke(Request::new("lease_acquire", json!({ "kind": "budget", "recordId": "b1" }))) {
         Ok(response) => {
             // Holds sit below Write and are deliberately not gated.
             assert!(response.is_ok(), "letting go of work should still be possible");
@@ -839,7 +840,7 @@ fn a_closed_budget_refuses_writes_and_names_who_closed_it() {
     }
 
     let refused = sam
-        .invoke(Request::new("create_category", json!({ "name": "Blocked", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "Blocked", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     match refused {
         Response::Err { sentence, .. } => {
@@ -879,7 +880,7 @@ fn a_closed_budget_can_be_reopened_without_restarting_the_host() {
     );
 
     let response = sam
-        .invoke(Request::new("create_category", json!({ "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     assert!(response.is_ok(), "writes should flow again once reopened");
 }
@@ -898,7 +899,7 @@ fn a_different_administrator_can_reopen() {
     );
 
     let response = pat
-        .invoke(Request::new("create_category", json!({ "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null })))
+        .invoke(Request::new("create_category", json!({ "request": { "name": "After", "category_type": "expense", "color": "#888888", "icon": null, "parent_id": null } })))
         .unwrap();
     assert!(response.is_ok());
 }

@@ -34,20 +34,26 @@ pub struct HostState {
     pub db: Arc<Database>,
     pub registry: Arc<Registry>,
     pub identity: HostIdentity,
-    /// Edit holds and, from phase 5, the news ring. Shared by every session so
-    /// that a hold taken at the hosting machine blocks a laptop and vice versa.
-    pub shared: SharedState,
+    /// Edit holds and the news ring. Shared with the local session by holding
+    /// the same Arc, so a hold taken at the hosting machine blocks a laptop and
+    /// a change made on a laptop is heard here.
+    pub shared: Arc<SharedState>,
     pairing: Mutex<Option<PairingWindow>>,
     throttle: Throttle,
 }
 
 impl HostState {
-    pub fn new(db: Arc<Database>, registry: Arc<Registry>, identity: HostIdentity) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        registry: Arc<Registry>,
+        identity: HostIdentity,
+        shared: Arc<SharedState>,
+    ) -> Self {
         HostState {
             db,
             registry,
             identity,
-            shared: SharedState::new(),
+            shared,
             pairing: Mutex::new(None),
             throttle: Throttle::new(),
         }

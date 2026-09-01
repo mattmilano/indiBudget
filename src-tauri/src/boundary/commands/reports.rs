@@ -17,6 +17,7 @@ use crate::boundary::{Area, BoundaryError, Required};
 use crate::commands as ops;
 
 #[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct Range {
     #[serde(default)]
     start_date: Option<chrono::NaiveDate>,
@@ -25,6 +26,7 @@ struct Range {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RequiredRange {
     start_date: chrono::NaiveDate,
     end_date: chrono::NaiveDate,
