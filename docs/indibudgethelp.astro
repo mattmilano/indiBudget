@@ -36,6 +36,7 @@ import Icon from '@components/Icon.astro';
           <li><a href="#reports">Reports &amp; Analytics</a></li>
           <li><a href="#import">Import</a></li>
           <li><a href="#simplefin">Bank Sync (SimpleFIN)</a></li>
+          <li><a href="#sharing">Sharing a Budget</a></li>
           <li><a href="#backup">Backup &amp; Restore</a></li>
           <li><a href="#encryption">Security &amp; Encryption</a></li>
           <li><a href="#settings">Settings</a></li>
@@ -76,7 +77,7 @@ import Icon from '@components/Icon.astro';
           <li><strong>Footer</strong> — Shows the app version.</li>
         </ul>
         <h3>Sidebar Navigation</h3>
-        <p>The sidebar contains links to: Dashboard, Calendar, Transactions, Accounts, Budgets, Categories, Payees, Goals, Recurring, Reports, Import, Settings, and About.</p>
+        <p>The sidebar contains links to: Dashboard, Calendar, Transactions, Accounts, Budgets, Categories, Payees, Goals, Recurring, Reports, Import, Sharing, Settings, and About.</p>
         <p>Click the collapse button (double chevron) to toggle between full sidebar and icon-only mode. Your preference is remembered across sessions.</p>
         <h3>Theme Support</h3>
         <p>indiBudget supports Light, Dark, and System themes. Change your theme in <strong>Settings</strong>.</p>
@@ -434,11 +435,114 @@ import Icon from '@components/Icon.astro';
       </article>
 
       <!-- ============================== -->
+      <!-- SHARING                        -->
+      <!-- ============================== -->
+
+      <article class="doc-section" id="sharing">
+        <h2>15. Sharing a Budget</h2>
+        <p>A couple or a family can work from one budget, each from their own computer. One computer keeps the data and the others connect to it across your home network. Nothing goes through a cloud service at any point.</p>
+        <p>Everything here is optional and switched off until you turn it on. Used on a single computer, indiBudget behaves exactly as it always has.</p>
+
+        <h3>What You Need</h3>
+        <ul>
+          <li>All the computers on the <strong>same home network</strong>.</li>
+          <li>One of them acting as the host. It has to be <strong>awake and running indiBudget</strong> for anyone else to reach the budget — a laptop with its lid shut is not reachable.</li>
+        </ul>
+        <p>Pick the machine most likely to be on as your host: a desktop that stays powered is a better choice than a laptop that travels.</p>
+
+        <h3>Hosting a Budget</h3>
+        <ol>
+          <li>Go to <strong>Sharing</strong> and click <strong>Start hosting</strong>.</li>
+          <li>Leave the port blank unless you have a reason to set one; indiBudget picks a free one.</li>
+          <li>The screen shows the address others should connect to, and an <strong>identity code</strong>.</li>
+        </ol>
+        <p>The identity code is worth understanding. It identifies this specific computer. When someone connects, their screen shows the same code — reading it aloud and checking the two match confirms they reached your machine and not something pretending to be it.</p>
+
+        <h3>Adding a Computer</h3>
+        <p>On the host:</p>
+        <ol>
+          <li>Click <strong>Start pairing</strong>. A short code appears, good for a few minutes.</li>
+        </ol>
+        <p>On the other computer:</p>
+        <ol>
+          <li>Go to <strong>Sharing</strong> and fill in the host's address, the pairing code, and a name for this computer.</li>
+          <li>Click <strong>Pair</strong>, then check the identity code shown matches the one on the host.</li>
+          <li>Sign in with your login and password.</li>
+        </ol>
+        <p>Pairing is a one-time step per computer. After that it only needs a sign-in.</p>
+        <p>Five wrong codes closes the pairing window. That is deliberate — if it happens, click <strong>Start pairing</strong> on the host for a fresh code rather than retrying the old one.</p>
+
+        <h3>People and What They Can Reach</h3>
+        <p>Everyone gets their own login and password. Access is granted per area, so it can match how much of the household's money someone is actually involved in:</p>
+        <div style="overflow-x:auto;">
+          <table class="doc-table">
+            <thead>
+              <tr><th>Area</th><th>Covers</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Money</td><td>Accounts, transactions, transfers, the bill calendar</td></tr>
+              <tr><td>Planning</td><td>Budgets, savings goals, recurring bills</td></tr>
+              <tr><td>Structure</td><td>Categories and categorisation rules</td></tr>
+              <tr><td>Reports</td><td>Spending charts, cash flow, trends</td></tr>
+              <tr><td>Admin</td><td>People, paired computers, settings, backups</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Each area can be set to no access, read, or read and write. A partner might have full access to everything; a teenager might have their own goals and the spending charts without the accounts behind them.</p>
+        <p>Reports show totals and per-category sums rather than individual transactions, which is why someone can be given the charts without being given the ledger.</p>
+        <p><strong>Administrators</strong> always have full access to everything, whatever else is set.</p>
+
+        <h3>Working at the Same Time</h3>
+        <p>Two people entering transactions never wait on each other. Logging the evening's receipts from two computers at once works exactly as you would hope.</p>
+        <p>Budgets, accounts, categories and goals are different — two people editing the same one would mean somebody retypes their work. So opening one for editing holds it, and anyone else who opens it sees a note naming who is editing, <em>before</em> they start typing rather than after they try to save.</p>
+        <p>A hold is let go when you save, when you leave the screen, or on its own if the computer holding it goes away.</p>
+
+        <h3>Seeing Each Other's Changes</h3>
+        <p>Screens check for changes every few seconds, so a transaction someone else adds appears without anyone pressing refresh. If the host is restarted, connected computers notice and reload rather than showing stale figures.</p>
+
+        <h3>Pausing Everyone (Maintenance)</h3>
+        <p>An administrator can <strong>close the budget for maintenance</strong> from the Sharing screen — useful before taking a backup, so nothing changes underneath it.</p>
+        <ul>
+          <li>Everyone can still <strong>look</strong> at the budget; only changes are paused.</li>
+          <li>A banner tells everyone who closed it.</li>
+          <li><strong>Any</strong> administrator can reopen it, not only the one who closed it, so a forgotten sign is never stuck waiting on someone who has gone out.</li>
+        </ul>
+
+        <h3>Removing Access</h3>
+        <p>Two separate levers, because they answer different questions:</p>
+        <ul>
+          <li><strong>Revoke a computer</strong> — for a laptop that was lost or sold. It stops connecting the next time it tries. Nobody's password changes, and other computers are unaffected.</li>
+          <li><strong>Deactivate a person</strong> — for someone who should no longer have access. They can no longer sign in from any computer, and no machine needs re-pairing.</li>
+        </ul>
+        <p>Revoking applies at the next connection rather than instantly, so a session already open finishes what it is doing.</p>
+
+        <h3>What Stays on the Host</h3>
+        <p>Some things are about a particular computer rather than the budget, and only ever run on the host:</p>
+        <ul>
+          <li>Backups and restores, which write to and read from that machine's disk</li>
+          <li>Importing files — the file is on the host's disk, not yours</li>
+          <li>Turning encryption on or off, and unlocking it</li>
+          <li>Desktop notifications about upcoming bills</li>
+        </ul>
+        <p>Ask for one of these while connected to someone else's budget and indiBudget tells you it has to be done at the host, rather than quietly doing it to the copy on your own machine.</p>
+
+        <h3>Security</h3>
+        <ul>
+          <li>Everything between computers is <strong>encrypted in transit</strong>.</li>
+          <li>Each computer remembers the host's identity after pairing and refuses to connect if it ever changes — which is what the identity code is for.</li>
+          <li>Passwords are stored using <strong>Argon2id</strong> and never travel in readable form.</li>
+          <li>Repeated wrong sign-ins are slowed down.</li>
+          <li>Sharing is <strong>local network only</strong>. There is deliberately no way to reach a budget over the internet.</li>
+        </ul>
+        <p class="doc-back"><a href="#top">Back to top</a></p>
+      </article>
+
+      <!-- ============================== -->
       <!-- BACKUP                         -->
       <!-- ============================== -->
 
       <article class="doc-section" id="backup">
-        <h2>15. Backup &amp; Restore</h2>
+        <h2>16. Backup &amp; Restore</h2>
         <p>Protect your data from the <strong>Settings</strong> page.</p>
         <h3>Creating a Backup</h3>
         <p>Click <strong>Export Backup</strong> to save a complete JSON backup of all your data: accounts, transactions, categories, budgets, goals, recurring transactions, and category rules.</p>
@@ -459,9 +563,10 @@ import Icon from '@components/Icon.astro';
       <!-- ============================== -->
 
       <article class="doc-section" id="encryption">
-        <h2>16. Security &amp; Encryption</h2>
+        <h2>17. Security &amp; Encryption</h2>
         <h3>Local-First Privacy</h3>
-        <p>All your data stays on your device. indiBudget never sends your financial information to any server (except SimpleFIN if you choose to enable bank sync).</p>
+        <p>Your data stays on hardware you own. indiBudget has no cloud account and no server of ours that your information passes through — nothing is ever sent to us or to any third party.</p>
+        <p>With sharing switched off, which is how indiBudget starts, your data never leaves the computer it is stored on. With sharing switched on it travels between your own computers over your own network, encrypted in transit, and no further. The one exception either way is SimpleFIN, if you choose to enable bank sync.</p>
         <h3>Data Encryption</h3>
         <p>Enable optional AES-256-GCM encryption to protect your database at rest. When enabled:</p>
         <ul>
@@ -483,7 +588,7 @@ import Icon from '@components/Icon.astro';
       <!-- ============================== -->
 
       <article class="doc-section" id="settings">
-        <h2>17. Settings</h2>
+        <h2>18. Settings</h2>
         <p>Configure indiBudget from the <strong>Settings</strong> page.</p>
         <h3>Display</h3>
         <ul>
@@ -520,7 +625,7 @@ import Icon from '@components/Icon.astro';
       <!-- ============================== -->
 
       <article class="doc-section" id="shortcuts">
-        <h2>18. Keyboard Shortcuts</h2>
+        <h2>19. Keyboard Shortcuts</h2>
         <div style="overflow-x:auto;">
           <table class="doc-table">
             <thead>
@@ -540,7 +645,7 @@ import Icon from '@components/Icon.astro';
       <!-- ============================== -->
 
       <article class="doc-section" id="installation">
-        <h2>19. Installation</h2>
+        <h2>20. Installation</h2>
 
         <h3>Linux</h3>
         <p>Download the appropriate package from the releases page:</p>
@@ -564,7 +669,7 @@ import Icon from '@components/Icon.astro';
       <!-- ============================== -->
 
       <article class="doc-section" id="troubleshooting">
-        <h2>20. Troubleshooting</h2>
+        <h2>21. Troubleshooting</h2>
 
         <h3>App shows incorrect balance</h3>
         <p>Balances are always computed from starting balance plus all transactions. Check that:</p>
@@ -579,6 +684,30 @@ import Icon from '@components/Icon.astro';
 
         <h3>SimpleFIN sync fails</h3>
         <p>Verify your access URL is correct. Access URLs expire — you may need to generate a new one from SimpleFIN. Check that your SimpleFIN subscription is active.</p>
+
+        <h3>Another computer cannot reach the host</h3>
+        <p>Check in order:</p>
+        <ul>
+          <li>The host is awake, running indiBudget, and still shows <strong>Hosting</strong> on its Sharing screen.</li>
+          <li>Both computers are on the same network. A phone hotspot or a guest network will not reach the host.</li>
+          <li>The address matches what the host's Sharing screen shows, including the number after the colon.</li>
+          <li>The host's firewall is not blocking the port.</li>
+        </ul>
+
+        <h3>Pairing says the code did not match, and I am sure it is right</h3>
+        <p>Pairing windows expire after a few minutes and close after five wrong attempts. Click <strong>Start pairing</strong> on the host for a fresh code. If the message says pairing is not open rather than that the code was wrong, that is what has happened.</p>
+
+        <h3>Connecting says the host's identity does not match</h3>
+        <p>Each computer remembers the host it paired with and refuses anything else. Usually this means the host's data was reset or moved to a different machine — pair again from the host's Sharing screen. If nothing like that happened, stop and find out why before continuing.</p>
+
+        <h3>A record says someone is editing it, but nobody is</h3>
+        <p>A hold is released when its owner saves, closes the screen, or disconnects, and lapses on its own within a minute if their computer vanished mid-edit. Wait a moment and try again.</p>
+
+        <h3>Changes are being refused and a banner mentions maintenance</h3>
+        <p>An administrator has closed the budget, probably to take a backup. Reading still works. Any administrator can reopen it from the Sharing screen.</p>
+
+        <h3>Backups and imports are unavailable while connected</h3>
+        <p>These act on files, and the files live on the computer hosting the budget. Do them there. See <a href="#sharing">Sharing a Budget</a>.</p>
 
         <h3>Blank or white window on startup (Linux)</h3>
         <p>Some GPU drivers cause WebKitGTK rendering issues. Try launching with:</p>
