@@ -99,7 +99,7 @@ const isActive = (path: string) => route.path === path;
       <!-- Footer -->
       <div v-if="sidebarOpen" class="p-4 border-t border-gray-700">
         <p class="text-xs text-gray-500 text-center">
-          indiBudget v1.0.0
+          indiBudget v1.1.0
         </p>
       </div>
     </aside>

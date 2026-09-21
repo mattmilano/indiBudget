@@ -30,7 +30,7 @@ onMounted(async () => {
           </div>
           <div>
             <h2 class="text-3xl font-bold text-gray-900 dark:text-white">indiBudget</h2>
-            <p class="text-lg text-gray-500 dark:text-gray-400">Version 1.0.0</p>
+            <p class="text-lg text-gray-500 dark:text-gray-400">Version 1.1.0</p>
           </div>
         </div>
 
