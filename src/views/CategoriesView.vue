@@ -187,7 +187,7 @@ onMounted(() => {
     </div>
 
     <!-- Summary Card -->
-    <div class="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+    <div class="bg-linear-to-r from-purple-600 to-indigo-600 rounded-lg shadow-lg p-6 mb-6 text-white">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h2 class="text-lg opacity-90 mb-1">Category Overview</h2>
@@ -241,7 +241,7 @@ onMounted(() => {
       <div
         v-for="category in topLevelCategories"
         :key="category.id"
-        class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md transition-shadow"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
       >
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-3">
@@ -256,19 +256,19 @@ onMounted(() => {
               <div class="flex items-center gap-2 mt-1">
                 <span
                   v-if="category.is_system"
-                  class="px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded"
+                  class="px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-sm"
                 >
                   System
                 </span>
                 <span
                   v-else
-                  class="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded"
+                  class="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-sm"
                 >
                   Custom
                 </span>
                 <span
                   v-if="childrenOf(category.id).length > 0"
-                  class="px-1.5 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"
+                  class="px-1.5 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-sm"
                 >
                   {{ childrenOf(category.id).length }} sub
                 </span>
@@ -312,7 +312,7 @@ onMounted(() => {
               <span class="text-sm text-gray-700 dark:text-gray-300">{{ child.name }}</span>
               <span
                 v-if="!child.is_system"
-                class="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded"
+                class="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-sm"
               >
                 Custom
               </span>
@@ -343,7 +343,7 @@ onMounted(() => {
     </div>
 
     <!-- Empty State -->
-    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
       <svg class="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
       </svg>
@@ -424,7 +424,7 @@ onMounted(() => {
               <input
                 v-model="newCategory.color"
                 type="color"
-                class="w-8 h-8 rounded cursor-pointer"
+                class="w-8 h-8 rounded-sm cursor-pointer"
               />
               <span class="text-sm text-gray-500">{{ newCategory.color }}</span>
             </div>
@@ -511,7 +511,7 @@ onMounted(() => {
               <input
                 v-model="editForm.color"
                 type="color"
-                class="w-8 h-8 rounded cursor-pointer"
+                class="w-8 h-8 rounded-sm cursor-pointer"
               />
               <span class="text-sm text-gray-500">{{ editForm.color }}</span>
             </div>

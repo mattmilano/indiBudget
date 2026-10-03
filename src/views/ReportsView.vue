@@ -703,7 +703,7 @@ onMounted(async () => {
     </div>
 
     <!-- Net Worth Card -->
-    <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+    <div class="bg-linear-to-r from-indigo-600 to-purple-600 rounded-lg shadow-lg p-6 mb-6 text-white">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h2 class="text-lg opacity-90 mb-1">Net Worth</h2>
@@ -753,7 +753,7 @@ onMounted(async () => {
     </div>
 
     <!-- Net Worth History Chart -->
-    <div v-if="netWorthHistory.length > 1" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+    <div v-if="netWorthHistory.length > 1" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Net Worth History</h2>
         <span class="text-sm text-gray-500 dark:text-gray-400">{{ netWorthHistory.length }} data points</span>
@@ -765,7 +765,7 @@ onMounted(async () => {
 
     <!-- Summary Cards with YoY Comparison -->
     <div v-if="cashFlowReport" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Income</h3>
         <p class="text-2xl font-bold text-green-600 mt-2">
           {{ formatCurrency(cashFlowReport.total_income) }}
@@ -785,7 +785,7 @@ onMounted(async () => {
           </span>
         </div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Expenses</h3>
         <p class="text-2xl font-bold text-red-600 mt-2">
           {{ formatCurrency(cashFlowReport.total_expenses) }}
@@ -805,7 +805,7 @@ onMounted(async () => {
           </span>
         </div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Net Cash Flow</h3>
         <p
           :class="[
@@ -825,7 +825,7 @@ onMounted(async () => {
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Spending by Category -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Spending by Category</h2>
         </div>
@@ -855,7 +855,7 @@ onMounted(async () => {
       </div>
 
       <!-- Income vs Expenses -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Income vs Expenses</h2>
         </div>
@@ -870,7 +870,7 @@ onMounted(async () => {
       </div>
 
       <!-- Net Income Trend -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow lg:col-span-2">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm lg:col-span-2">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Net Income Trend</h2>
         </div>
@@ -891,7 +891,7 @@ onMounted(async () => {
 
       <!-- Savings Rate Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-5">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Average Savings Rate</h3>
           <p :class="[
             'text-3xl font-bold mt-1',
@@ -907,7 +907,7 @@ onMounted(async () => {
                savingsRateSummary.avgRate >= 10 ? 'Good start' : 'Room to improve' }}
           </p>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-5">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Current Month Rate</h3>
           <p :class="[
             'text-3xl font-bold mt-1',
@@ -916,7 +916,7 @@ onMounted(async () => {
             {{ savingsRateSummary.currentRate.toFixed(1) }}%
           </p>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-5">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Saved (12mo)</h3>
           <p :class="[
             'text-3xl font-bold mt-1',
@@ -925,7 +925,7 @@ onMounted(async () => {
             {{ formatCurrency(savingsRateSummary.totalSaved) }}
           </p>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-5">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Positive Months</h3>
           <p class="text-3xl font-bold mt-1 text-gray-900 dark:text-white">
             {{ savingsRateSummary.positiveSavingsMonths }}/{{ savingsRateSummary.totalMonths }}
@@ -939,7 +939,7 @@ onMounted(async () => {
       <!-- Savings Rate Chart and Best/Worst Months -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Savings Rate Chart -->
-        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
           <div class="p-4 border-b border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Savings Rate Trend</h2>
             <p class="text-sm text-gray-500">Monthly savings as % of income</p>
@@ -950,19 +950,19 @@ onMounted(async () => {
             </div>
             <div class="flex justify-center gap-4 mt-4 text-xs">
               <div class="flex items-center gap-1">
-                <div class="w-3 h-3 rounded" style="background-color: rgba(34, 197, 94, 0.5)"></div>
+                <div class="w-3 h-3 rounded-sm" style="background-color: rgba(34, 197, 94, 0.5)"></div>
                 <span class="text-gray-500">20%+ (Excellent)</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-3 h-3 rounded" style="background-color: rgba(234, 179, 8, 0.5)"></div>
+                <div class="w-3 h-3 rounded-sm" style="background-color: rgba(234, 179, 8, 0.5)"></div>
                 <span class="text-gray-500">10-20% (Good)</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-3 h-3 rounded" style="background-color: rgba(251, 146, 60, 0.5)"></div>
+                <div class="w-3 h-3 rounded-sm" style="background-color: rgba(251, 146, 60, 0.5)"></div>
                 <span class="text-gray-500">0-10% (Fair)</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-3 h-3 rounded" style="background-color: rgba(239, 68, 68, 0.5)"></div>
+                <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.5)"></div>
                 <span class="text-gray-500">Negative (Loss)</span>
               </div>
             </div>
@@ -970,7 +970,7 @@ onMounted(async () => {
         </div>
 
         <!-- Best & Worst Months -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
           <div class="p-4 border-b border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Performance Highlights</h2>
           </div>

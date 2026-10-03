@@ -225,7 +225,7 @@ function calculateYearlySavings(amount: string, frequency: string): string {
     </div>
 
     <!-- Savings Summary Card -->
-    <div v-if="savingsSummary && savingsSummary.cancelled_count > 0" class="mb-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white">
+    <div v-if="savingsSummary && savingsSummary.cancelled_count > 0" class="mb-6 bg-linear-to-r from-green-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-semibold opacity-90">Your Savings from Cancelled Subscriptions</h2>
@@ -267,7 +267,7 @@ function calculateYearlySavings(amount: string, frequency: string): string {
     </div>
 
     <!-- Recurring List -->
-    <div v-else-if="recurring.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+    <div v-else-if="recurring.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
       <table class="w-full">
         <thead class="bg-gray-50 dark:bg-gray-700">
           <tr>
@@ -316,7 +316,7 @@ function calculateYearlySavings(amount: string, frequency: string): string {
     </div>
 
     <!-- Empty State -->
-    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
       <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>

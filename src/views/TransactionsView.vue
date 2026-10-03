@@ -538,7 +538,7 @@ onMounted(async () => {
     </div>
 
     <!-- Date Range Selector -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-4">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Date Range:</span>
         <div class="flex flex-wrap gap-2">
@@ -592,19 +592,19 @@ onMounted(async () => {
 
     <!-- Summary Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Transactions</p>
         <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ transactionSummary.count }}</p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Income</p>
         <p class="text-2xl font-bold text-green-600">{{ formatCurrency(transactionSummary.income) }}</p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Expenses</p>
         <p class="text-2xl font-bold text-red-600">{{ formatCurrency(transactionSummary.expenses) }}</p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Net</p>
         <p :class="['text-2xl font-bold', transactionSummary.net >= 0 ? 'text-green-600' : 'text-red-600']">
           {{ formatCurrency(transactionSummary.net) }}
@@ -613,7 +613,7 @@ onMounted(async () => {
     </div>
 
     <!-- Filters -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6">
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <input
           v-model="searchQuery"
@@ -653,7 +653,7 @@ onMounted(async () => {
     </div>
 
     <!-- Transactions List -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
       <div v-if="filteredTransactions.length === 0" class="p-8 text-center text-gray-500">
         No transactions found for the selected period. Try adjusting your filters or date range.
       </div>
@@ -686,10 +686,10 @@ onMounted(async () => {
                 <div>
                   <div class="flex items-center gap-2">
                     <p class="font-medium text-gray-900 dark:text-white">{{ tx.description }}</p>
-                    <span v-if="tx.is_split" class="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">
+                    <span v-if="tx.is_split" class="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-sm">
                       Split
                     </span>
-                    <span v-if="tx.parent_transaction_id" class="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded">
+                    <span v-if="tx.parent_transaction_id" class="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded-sm">
                       Split Part
                     </span>
                   </div>
@@ -750,7 +750,7 @@ onMounted(async () => {
     </div>
 
     <!-- Pagination Controls -->
-    <div v-if="filteredTransactions.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow mt-4 p-4">
+    <div v-if="filteredTransactions.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm mt-4 p-4">
       <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
         <!-- Results info -->
         <div class="text-sm text-gray-500 dark:text-gray-400">
@@ -763,7 +763,7 @@ onMounted(async () => {
           <!-- Page size selector -->
           <select
             v-model="pageSize"
-            class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           >
             <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} per page</option>
           </select>
@@ -772,7 +772,7 @@ onMounted(async () => {
           <button
             @click="goToPage(currentPage - 1)"
             :disabled="currentPage === 1"
-            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -782,7 +782,7 @@ onMounted(async () => {
             <button
               v-if="currentPage > 2"
               @click="goToPage(1)"
-              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               1
             </button>
@@ -793,7 +793,7 @@ onMounted(async () => {
                 v-if="Math.abs(page + Math.max(0, currentPage - 3) - currentPage) <= 1 || totalPages <= 5"
                 @click="goToPage(totalPages <= 5 ? page : page + Math.max(0, currentPage - 3))"
                 :class="[
-                  'px-3 py-1 text-sm border rounded',
+                  'px-3 py-1 text-sm border rounded-sm',
                   (totalPages <= 5 ? page : page + Math.max(0, currentPage - 3)) === currentPage
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -807,7 +807,7 @@ onMounted(async () => {
             <button
               v-if="currentPage < totalPages - 1 && totalPages > 5"
               @click="goToPage(totalPages)"
-              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               {{ totalPages }}
             </button>
@@ -817,7 +817,7 @@ onMounted(async () => {
           <button
             @click="goToPage(currentPage + 1)"
             :disabled="currentPage === totalPages"
-            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Next
           </button>
@@ -934,7 +934,7 @@ onMounted(async () => {
       @click.self="showCategorizeResultModal = false"
     >
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
-        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 flex-shrink-0">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 shrink-0">
           <div class="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
             <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -958,7 +958,7 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end flex-shrink-0">
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end shrink-0">
           <button
             @click="showCategorizeResultModal = false"
             class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1022,7 +1022,7 @@ onMounted(async () => {
               id="uncategorized-only"
               v-model="batchUncategorizedOnly"
               type="checkbox"
-              class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              class="w-4 h-4 text-indigo-600 border-gray-300 rounded-sm focus:ring-indigo-500"
             />
             <label for="uncategorized-only" class="text-sm text-gray-700 dark:text-gray-300">
               Only update uncategorized transactions (uncheck to re-categorize all matching)
@@ -1112,7 +1112,7 @@ onMounted(async () => {
         <div class="p-4">
           <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 mb-4">
             <div class="flex items-start gap-3">
-              <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div class="flex-1">
@@ -1162,7 +1162,7 @@ onMounted(async () => {
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-gray-900 dark:text-white truncate">"{{ rule.pattern }}"</span>
-                  <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>
                   <span class="text-indigo-600 dark:text-indigo-400 truncate">{{ rule.category_name }}</span>

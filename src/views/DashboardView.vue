@@ -107,7 +107,7 @@ function navigateTo(path: string) {
     </div>
 
     <!-- New User Welcome -->
-    <div v-else-if="isNewUser" class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg p-8 text-white">
+    <div v-else-if="isNewUser" class="bg-linear-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg p-8 text-white">
       <div class="max-w-2xl">
         <h2 class="text-3xl font-bold mb-4">Welcome to indiBudget!</h2>
         <p class="text-indigo-100 mb-6">
@@ -134,7 +134,7 @@ function navigateTo(path: string) {
     <template v-else>
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Balance</h3>
           <p class="text-2xl font-bold text-gray-900 dark:text-white mt-2">
             {{ formatCurrency(accountsStore.totalBalance) }}
@@ -142,7 +142,7 @@ function navigateTo(path: string) {
           <p class="text-sm text-gray-500 mt-1">{{ accountsStore.activeAccounts.length }} accounts</p>
         </div>
 
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Monthly Income</h3>
           <p class="text-2xl font-bold text-green-600 dark:text-green-400 mt-2">
             {{ formatCurrency(monthlyIncome) }}
@@ -150,7 +150,7 @@ function navigateTo(path: string) {
           <p class="text-sm text-gray-500 mt-1">This month</p>
         </div>
 
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Monthly Expenses</h3>
           <p class="text-2xl font-bold text-red-600 dark:text-red-400 mt-2">
             {{ formatCurrency(monthlyExpenses) }}
@@ -158,7 +158,7 @@ function navigateTo(path: string) {
           <p class="text-sm text-gray-500 mt-1">This month</p>
         </div>
 
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
           <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Net Savings</h3>
           <p :class="['text-2xl font-bold mt-2', netSavings >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400']">
             {{ netSavings >= 0 ? '+' : '' }}{{ formatCurrency(netSavings) }}
@@ -174,7 +174,7 @@ function navigateTo(path: string) {
         <!-- Over Budget Alert -->
         <div v-if="budgetsStore.overBudgetItems.length > 0" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
           <div class="flex items-center gap-3">
-            <div class="flex-shrink-0">
+            <div class="shrink-0">
               <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
@@ -196,7 +196,7 @@ function navigateTo(path: string) {
         <!-- Uncategorized Alert -->
         <div v-if="uncategorizedCount > 10" class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
           <div class="flex items-center gap-3">
-            <div class="flex-shrink-0">
+            <div class="shrink-0">
               <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
               </svg>
@@ -218,7 +218,7 @@ function navigateTo(path: string) {
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Recent Transactions -->
-        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
           <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Recent Transactions</h2>
             <button @click="navigateTo('/transactions')" class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400">
@@ -272,7 +272,7 @@ function navigateTo(path: string) {
         <!-- Sidebar -->
         <div class="space-y-6">
           <!-- Top Spending Categories -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
             <div class="p-4 border-b border-gray-200 dark:border-gray-700">
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Top Spending</h2>
             </div>
@@ -299,7 +299,7 @@ function navigateTo(path: string) {
           </div>
 
           <!-- Upcoming Bills -->
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
             <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Upcoming Bills</h2>
               <button @click="navigateTo('/recurring')" class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400">
@@ -339,7 +339,7 @@ function navigateTo(path: string) {
       </div>
 
       <!-- Budget Progress -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Budget Progress</h2>
           <button @click="navigateTo('/budgets')" class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400">

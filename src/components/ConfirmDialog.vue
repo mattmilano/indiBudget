@@ -93,7 +93,7 @@ const variantClasses = {
               <div class="p-6">
                 <div class="flex items-start gap-4">
                   <!-- Icon -->
-                  <div :class="['flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center', variantClasses[variant].iconBg]">
+                  <div :class="['shrink-0 w-10 h-10 rounded-full flex items-center justify-center', variantClasses[variant].iconBg]">
                     <svg
                       v-if="variant === 'danger'"
                       :class="['w-6 h-6', variantClasses[variant].icon]"
@@ -140,14 +140,14 @@ const variantClasses = {
                 <button
                   type="button"
                   @click="handleCancel"
-                  class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors"
+                  class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors"
                 >
                   {{ cancelText }}
                 </button>
                 <button
                   type="button"
                   @click="handleConfirm"
-                  :class="['px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors', variantClasses[variant].button]"
+                  :class="['px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-hidden focus:ring-2 focus:ring-offset-2 transition-colors', variantClasses[variant].button]"
                 >
                   {{ confirmText }}
                 </button>

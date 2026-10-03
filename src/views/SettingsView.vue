@@ -548,7 +548,7 @@ function formatLastSync(dateStr: string | null): string {
 
     <div class="space-y-6">
       <!-- General Settings -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">General</h2>
         </div>
@@ -590,7 +590,7 @@ function formatLastSync(dateStr: string | null): string {
       </div>
 
       <!-- Notifications -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h2>
         </div>
@@ -611,7 +611,7 @@ function formatLastSync(dateStr: string | null): string {
             <input
               v-model="settings.notifications.upcomingBills"
               type="checkbox"
-              class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+              class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
             />
           </div>
           <div class="flex items-center justify-between">
@@ -622,7 +622,7 @@ function formatLastSync(dateStr: string | null): string {
             <input
               v-model="settings.notifications.budgetAlerts"
               type="checkbox"
-              class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+              class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
             />
           </div>
           <div class="flex items-center justify-between">
@@ -633,7 +633,7 @@ function formatLastSync(dateStr: string | null): string {
             <input
               v-model="settings.notifications.goalProgress"
               type="checkbox"
-              class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+              class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
             />
           </div>
           <div class="flex items-center justify-between">
@@ -644,7 +644,7 @@ function formatLastSync(dateStr: string | null): string {
             <input
               v-model="settings.notifications.showAmount"
               type="checkbox"
-              class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+              class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
             />
           </div>
           <div>
@@ -678,7 +678,7 @@ function formatLastSync(dateStr: string | null): string {
       </div>
 
       <!-- Security -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Security</h2>
         </div>
@@ -847,7 +847,7 @@ function formatLastSync(dateStr: string | null): string {
       </div>
 
       <!-- Data Management -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Data Management</h2>
         </div>
@@ -858,7 +858,7 @@ function formatLastSync(dateStr: string | null): string {
             class="px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800"
           >
             <div class="flex items-start gap-3">
-              <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div class="flex-1">
@@ -934,7 +934,7 @@ function formatLastSync(dateStr: string | null): string {
                 <input
                   v-model="settings.backup.reminderEnabled"
                   type="checkbox"
-                  class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+                  class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
                   @change="checkBackupStatus()"
                 />
               </div>
@@ -958,11 +958,11 @@ function formatLastSync(dateStr: string | null): string {
       </div>
 
       <!-- SimpleFIN Bank Sync -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Bank Sync</h2>
-            <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">SimpleFIN</span>
+            <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-sm">SimpleFIN</span>
           </div>
         </div>
         <div class="p-4 space-y-4">
@@ -1116,7 +1116,7 @@ function formatLastSync(dateStr: string | null): string {
                   <input
                     v-model="simplefinConfig.autoSync"
                     type="checkbox"
-                    class="w-5 h-5 rounded border-gray-300 dark:border-gray-600"
+                    class="w-5 h-5 rounded-sm border-gray-300 dark:border-gray-600"
                     @change="saveSimplefinConfig"
                   />
                 </div>

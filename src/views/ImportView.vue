@@ -297,7 +297,7 @@ onMounted(() => {
     </div>
 
     <!-- Import History Panel -->
-    <div v-if="showHistory" class="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div v-if="showHistory" class="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Import History</h2>
         <button
@@ -377,7 +377,7 @@ onMounted(() => {
     </div>
 
     <!-- Step 1: Select File -->
-    <div v-if="step === 'select'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div v-if="step === 'select'" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Select File</h2>
       <p class="text-gray-500 dark:text-gray-400 mb-6">
         Choose a CSV or Excel file to import transactions from your bank statement.
@@ -411,7 +411,7 @@ onMounted(() => {
     </div>
 
     <!-- Step 2: Map Columns -->
-    <div v-if="step === 'map'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div v-if="step === 'map'" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Map Columns</h2>
       <p class="text-gray-500 dark:text-gray-400 mb-6">
         Match your file's columns to the transaction fields.
@@ -453,7 +453,7 @@ onMounted(() => {
             v-model="useSeparateColumns"
             type="checkbox"
             id="separateColumns"
-            class="rounded border-gray-300 dark:border-gray-600"
+            class="rounded-sm border-gray-300 dark:border-gray-600"
           />
           <label for="separateColumns" class="text-sm text-gray-700 dark:text-gray-300">
             Use separate debit/credit columns
@@ -510,7 +510,7 @@ onMounted(() => {
     </div>
 
     <!-- Step 3: Preview -->
-    <div v-if="step === 'preview'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div v-if="step === 'preview'" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Preview</h2>
       <p class="text-gray-500 dark:text-gray-400 mb-6">
         Review the first 10 transactions before importing.
@@ -583,7 +583,7 @@ onMounted(() => {
     </div>
 
     <!-- Step 4: Result -->
-    <div v-if="step === 'result' && importResult" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div v-if="step === 'result' && importResult" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <div class="text-center">
         <svg class="w-16 h-16 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

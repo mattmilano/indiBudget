@@ -248,19 +248,19 @@ onMounted(fetchGoals);
 
     <!-- Summary Stats -->
     <div v-if="goals.length > 0" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Total Saved</p>
         <p class="text-2xl font-bold text-green-600">
           {{ formatCurrency(goals.reduce((sum, g) => sum + (parseFloat(g.current_amount) || 0), 0)) }}
         </p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Total Target</p>
         <p class="text-2xl font-bold text-gray-900 dark:text-white">
           {{ formatCurrency(goals.reduce((sum, g) => sum + (parseFloat(g.target_amount) || 0), 0)) }}
         </p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">Active Goals</p>
         <p class="text-2xl font-bold text-blue-600">
           {{ goals.filter(g => g.status === 'active').length }}
@@ -566,28 +566,28 @@ onMounted(fetchGoals);
             <button
               type="button"
               @click="setQuickContribution(0.1)"
-              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               10%
             </button>
             <button
               type="button"
               @click="setQuickContribution(0.25)"
-              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               25%
             </button>
             <button
               type="button"
               @click="setQuickContribution(0.5)"
-              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              class="flex-1 py-1.5 px-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               50%
             </button>
             <button
               type="button"
               @click="setQuickContribution(1)"
-              class="flex-1 py-1.5 px-2 text-sm bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
+              class="flex-1 py-1.5 px-2 text-sm bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
             >
               Full
             </button>

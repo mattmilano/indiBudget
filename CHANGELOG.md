@@ -51,6 +51,8 @@ across the home network — no cloud service is involved at any point.
   application, removing the rounding error that floating point introduces
 - SimpleFIN credentials moved from browser storage into the application
   database
+- Moved to Tailwind CSS 4. Screens look the same apart from a slightly more
+  vivid colour palette, most noticeably in reds
 - Privacy wording throughout now describes what sharing actually does: your data
   stays on hardware you own and reaches no third party, but it does travel
   between your own computers when sharing is switched on
@@ -71,5 +73,7 @@ across the home network — no cloud service is involved at any point.
   if the host's identity ever changes
 - Repeated failed sign-ins are slowed down, and a failed attempt reveals nothing
   about whether that login exists
+- All known vulnerabilities in third-party packages resolved; `npm audit`
+  reports none
 
 [1.1.0]: https://github.com/mattmilano/indiBudget/releases/tag/v1.1.0

@@ -283,7 +283,7 @@ onMounted(() => {
     </div>
 
     <!-- Total Balance Card -->
-    <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 mb-6 text-white">
+    <div class="bg-linear-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 mb-6 text-white">
       <h2 class="text-lg opacity-90">Total Net Worth</h2>
       <p class="text-4xl font-bold mt-2">{{ formatCurrency(accountsStore.totalBalance) }}</p>
       <p class="text-sm opacity-75 mt-2">Across {{ accountsStore.activeAccounts.length }} accounts</p>
@@ -294,7 +294,7 @@ onMounted(() => {
       <div
         v-for="account in accountsStore.accounts"
         :key="account.id"
-        class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-md transition-shadow"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow"
       >
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-3">
@@ -352,7 +352,7 @@ onMounted(() => {
             {{ formatCurrency(account.balance, account.currency || 'USD') }}
           </p>
           <div class="flex items-center gap-2 mt-1">
-            <span v-if="account.currency && account.currency !== 'USD'" class="px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+            <span v-if="account.currency && account.currency !== 'USD'" class="px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-sm">
               {{ account.currency }}
             </span>
             <p v-if="account.institution" class="text-sm text-gray-500 dark:text-gray-400">
@@ -365,7 +365,7 @@ onMounted(() => {
     </div>
 
     <!-- Empty State -->
-    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
       <svg class="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
       </svg>

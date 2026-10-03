@@ -179,7 +179,7 @@ watch(() => props.show, (newVal) => {
           <!-- Modal -->
           <div class="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 overflow-hidden max-h-[90vh] flex flex-col">
             <!-- Header -->
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <div class="flex items-center justify-between">
                 <div>
                   <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -201,7 +201,7 @@ watch(() => props.show, (newVal) => {
             </div>
 
             <!-- Statement Info -->
-            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -294,7 +294,7 @@ watch(() => props.show, (newVal) => {
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                       <div :class="[
-                        'w-5 h-5 rounded border-2 flex items-center justify-center',
+                        'w-5 h-5 rounded-sm border-2 flex items-center justify-center',
                         getTransactionStatus(tx) === 'cleared'
                           ? 'border-green-500 bg-green-500'
                           : 'border-gray-300 dark:border-gray-600'
@@ -334,7 +334,7 @@ watch(() => props.show, (newVal) => {
                   <div
                     v-for="tx in reconciledTransactions.slice(0, 5)"
                     :key="tx.id"
-                    class="p-2 rounded bg-gray-100 dark:bg-gray-700/50 text-sm flex justify-between"
+                    class="p-2 rounded-sm bg-gray-100 dark:bg-gray-700/50 text-sm flex justify-between"
                   >
                     <span class="text-gray-600 dark:text-gray-400">{{ tx.description }}</span>
                     <span :class="tx.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'">
@@ -349,7 +349,7 @@ watch(() => props.show, (newVal) => {
             </div>
 
             <!-- Footer -->
-            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700 shrink-0">
               <div class="flex justify-between items-center">
                 <p class="text-sm text-gray-500 dark:text-gray-400">
                   Click transactions to mark them as cleared
@@ -367,7 +367,7 @@ watch(() => props.show, (newVal) => {
                     @click="handleReconcile"
                     :disabled="saving"
                     :class="[
-                      'px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center gap-2',
+                      'px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-hidden focus:ring-2 focus:ring-offset-2 transition-colors flex items-center gap-2',
                       isBalanced
                         ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500'
                         : 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500'

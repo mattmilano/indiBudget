@@ -140,22 +140,22 @@ onMounted(async () => {
 
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white">
+      <div class="bg-linear-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white">
         <h3 class="text-sm font-medium opacity-90">Total Payees</h3>
         <p class="text-3xl font-bold mt-1">{{ summaryStats.totalPayees }}</p>
       </div>
-      <div class="bg-gradient-to-r from-red-600 to-red-700 rounded-lg shadow-lg p-6 text-white">
+      <div class="bg-linear-to-r from-red-600 to-red-700 rounded-lg shadow-lg p-6 text-white">
         <h3 class="text-sm font-medium opacity-90">Total Spending</h3>
         <p class="text-3xl font-bold mt-1">{{ formatCurrency(summaryStats.totalSpent) }}</p>
       </div>
-      <div class="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg shadow-lg p-6 text-white">
+      <div class="bg-linear-to-r from-purple-600 to-purple-700 rounded-lg shadow-lg p-6 text-white">
         <h3 class="text-sm font-medium opacity-90">Avg per Payee</h3>
         <p class="text-3xl font-bold mt-1">{{ formatCurrency(summaryStats.avgPerPayee) }}</p>
       </div>
     </div>
 
     <!-- Search and Sort -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6">
       <div class="flex flex-col md:flex-row gap-4">
         <div class="flex-1">
           <input
@@ -213,7 +213,7 @@ onMounted(async () => {
     </div>
 
     <!-- Payees List -->
-    <div v-if="filteredPayees.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+    <div v-if="filteredPayees.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
       <div class="divide-y divide-gray-200 dark:divide-gray-700">
         <div
           v-for="payee in filteredPayees"
@@ -242,13 +242,13 @@ onMounted(async () => {
                   <span
                     v-for="catName in getCategoryNames(payee.categories)"
                     :key="catName"
-                    class="px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded"
+                    class="px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-sm"
                   >
                     {{ catName }}
                   </span>
                   <span
                     v-if="payee.categories.size > 3"
-                    class="px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 rounded"
+                    class="px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 rounded-sm"
                   >
                     +{{ payee.categories.size - 3 }} more
                   </span>
@@ -267,7 +267,7 @@ onMounted(async () => {
     </div>
 
     <!-- Empty State -->
-    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+    <div v-else class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
       <svg class="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>

@@ -416,7 +416,7 @@ onMounted(fetchData);
             :class="[
               'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
               viewMode === 'transactions'
-                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             ]"
           >
@@ -427,7 +427,7 @@ onMounted(fetchData);
             :class="[
               'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
               viewMode === 'bills'
-                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             ]"
           >
@@ -467,7 +467,7 @@ onMounted(fetchData);
     <!-- Tip for transaction view -->
     <div v-if="viewMode === 'transactions'" class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
       <div class="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span>
@@ -478,19 +478,19 @@ onMounted(fetchData);
 
     <!-- Summary Cards (Bills view) -->
     <div v-if="viewMode === 'bills'" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-5 text-white">
+      <div class="bg-linear-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-5 text-white">
         <h3 class="text-sm font-medium opacity-90">Bills This Month</h3>
         <p class="text-3xl font-bold mt-1">{{ monthSummary.totalBills }}</p>
       </div>
-      <div class="bg-gradient-to-r from-red-600 to-red-700 rounded-lg shadow-lg p-5 text-white">
+      <div class="bg-linear-to-r from-red-600 to-red-700 rounded-lg shadow-lg p-5 text-white">
         <h3 class="text-sm font-medium opacity-90">Total Expenses</h3>
         <p class="text-3xl font-bold mt-1">{{ formatCurrency(monthSummary.expenseAmount) }}</p>
       </div>
-      <div class="bg-gradient-to-r from-green-600 to-green-700 rounded-lg shadow-lg p-5 text-white">
+      <div class="bg-linear-to-r from-green-600 to-green-700 rounded-lg shadow-lg p-5 text-white">
         <h3 class="text-sm font-medium opacity-90">Expected Income</h3>
         <p class="text-3xl font-bold mt-1">{{ formatCurrency(monthSummary.incomeAmount) }}</p>
       </div>
-      <div class="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg shadow-lg p-5 text-white">
+      <div class="bg-linear-to-r from-purple-600 to-purple-700 rounded-lg shadow-lg p-5 text-white">
         <h3 class="text-sm font-medium opacity-90">Net Expected</h3>
         <p class="text-3xl font-bold mt-1">{{ formatCurrency(monthSummary.incomeAmount - monthSummary.expenseAmount) }}</p>
       </div>
@@ -499,13 +499,13 @@ onMounted(fetchData);
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Calendar -->
       <div :class="viewMode === 'bills' ? 'lg:col-span-2' : 'lg:col-span-3'">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
           <FullCalendar ref="calendarRef" :options="calendarOptions" />
         </div>
       </div>
 
       <!-- Upcoming Bills Sidebar (only in bills view) -->
-      <div v-if="viewMode === 'bills'" class="bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div v-if="viewMode === 'bills'" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Upcoming Bills</h2>
           <p class="text-sm text-gray-500 dark:text-gray-400">Next 30 days</p>
@@ -561,11 +561,11 @@ onMounted(fetchData);
         <div class="p-4 border-t border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-4 text-sm">
             <div class="flex items-center gap-2">
-              <div class="w-3 h-3 rounded bg-red-500"></div>
+              <div class="w-3 h-3 rounded-sm bg-red-500"></div>
               <span class="text-gray-600 dark:text-gray-400">Expense</span>
             </div>
             <div class="flex items-center gap-2">
-              <div class="w-3 h-3 rounded bg-green-500"></div>
+              <div class="w-3 h-3 rounded-sm bg-green-500"></div>
               <span class="text-gray-600 dark:text-gray-400">Income</span>
             </div>
           </div>

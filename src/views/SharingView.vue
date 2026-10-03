@@ -152,7 +152,7 @@ onMounted(async () => {
             Paired. Check this matches the code shown on the other computer:
           </p>
           <code
-            class="block mb-3 p-2 text-xs bg-gray-100 dark:bg-gray-800 rounded break-all"
+            class="block mb-3 p-2 text-xs bg-gray-100 dark:bg-gray-800 rounded-sm break-all"
             >{{ paired.fingerprint_groups }}</code
           >
           <input
@@ -197,7 +197,7 @@ onMounted(async () => {
             <h2 class="font-semibold text-gray-900 dark:text-white">Hosting</h2>
             <p class="text-sm text-gray-700 dark:text-gray-300 mt-1">
               Others can connect to
-              <code class="px-1 bg-white dark:bg-gray-800 rounded">{{ store.status.address }}</code>
+              <code class="px-1 bg-white dark:bg-gray-800 rounded-sm">{{ store.status.address }}</code>
             </p>
             <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">
               Identity code — read this out to confirm they reached the right computer:

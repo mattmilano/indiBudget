@@ -284,19 +284,19 @@ onMounted(async () => {
 
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Budgeted</h3>
         <p class="text-2xl font-bold text-gray-900 dark:text-white mt-2">
           {{ formatCurrency(budgetsStore.totalBudgeted) }}
         </p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Spent</h3>
         <p class="text-2xl font-bold text-gray-900 dark:text-white mt-2">
           {{ formatCurrency(budgetsStore.totalSpent) }}
         </p>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
         <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Remaining</h3>
         <p
           :class="[
@@ -316,7 +316,7 @@ onMounted(async () => {
       <div
         v-for="status in budgetsStore.budgetStatus"
         :key="status.budget.id"
-        class="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6"
       >
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-3">
@@ -468,7 +468,7 @@ onMounted(async () => {
               v-model="newBudget.rollover"
               type="checkbox"
               id="rollover"
-              class="rounded border-gray-300 dark:border-gray-600"
+              class="rounded-sm border-gray-300 dark:border-gray-600"
             />
             <label for="rollover" class="text-sm text-gray-700 dark:text-gray-300">
               Roll over unused budget to next period
@@ -551,7 +551,7 @@ onMounted(async () => {
               v-model="editForm.rollover"
               type="checkbox"
               id="edit-rollover"
-              class="rounded border-gray-300 dark:border-gray-600"
+              class="rounded-sm border-gray-300 dark:border-gray-600"
             />
             <label for="edit-rollover" class="text-sm text-gray-700 dark:text-gray-300">
               Roll over unused budget to next period
@@ -635,7 +635,7 @@ onMounted(async () => {
               class="p-4 border-2 border-gray-200 dark:border-gray-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-400 cursor-pointer transition-colors"
             >
               <div class="flex items-start gap-3">
-                <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex-shrink-0">
+                <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
                   <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="template.icon" />
                   </svg>

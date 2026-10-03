@@ -163,7 +163,7 @@ function declineAgreement() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
+  <div v-if="show" class="fixed inset-0 z-100 flex items-center justify-center bg-black/60">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col mx-4">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
