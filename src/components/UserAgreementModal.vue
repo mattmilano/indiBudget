@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import * as api from '../services/api';
 
 defineProps<{
@@ -12,6 +13,8 @@ const emit = defineEmits<{
 
 const agreementText = ref('');
 const scrolledToBottom = ref(false);
+const saving = ref(false);
+const saveError = ref<string | null>(null);
 const agreementVersion = '1.1';
 
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -150,15 +153,33 @@ function handleScroll() {
 }
 
 async function acceptAgreement() {
-  const now = new Date().toISOString();
-  await api.setSetting('user_agreement_accepted', 'true');
-  await api.setSetting('user_agreement_version', agreementVersion);
-  await api.setSetting('user_agreement_accepted_at', now);
-  emit('accepted');
+  if (saving.value) return;
+  saving.value = true;
+  saveError.value = null;
+  try {
+    const now = new Date().toISOString();
+    await api.setSetting('user_agreement_accepted', 'true');
+    await api.setSetting('user_agreement_version', agreementVersion);
+    await api.setSetting('user_agreement_accepted_at', now);
+    emit('accepted');
+  } catch (e) {
+    // Never fail silently here: a button that does nothing when clicked is
+    // indistinguishable from a broken app.
+    saveError.value = `Your acceptance could not be saved: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    saving.value = false;
+  }
 }
 
-function declineAgreement() {
-  window.close();
+async function declineAgreement() {
+  // `window.close()` is ignored by the system webview for a window the page
+  // did not open itself, so Decline did nothing. Close it through Tauri, which
+  // needs the `core:window:allow-close` permission in capabilities/default.json.
+  try {
+    await getCurrentWindow().close();
+  } catch (e) {
+    saveError.value = `Could not close indiBudget: ${e instanceof Error ? e.message : String(e)}`;
+  }
 }
 </script>
 
@@ -191,6 +212,13 @@ function declineAgreement() {
         </p>
       </div>
 
+      <div
+        v-if="saveError"
+        class="px-6 py-3 bg-red-50 dark:bg-red-900/30 border-t border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300"
+      >
+        {{ saveError }}
+      </div>
+
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
         <button
@@ -201,15 +229,15 @@ function declineAgreement() {
         </button>
         <button
           @click="acceptAgreement"
-          :disabled="!scrolledToBottom"
+          :disabled="!scrolledToBottom || saving"
           :class="[
             'px-6 py-2 rounded-lg font-medium transition-colors',
-            scrolledToBottom
+            scrolledToBottom && !saving
               ? 'bg-blue-600 text-white hover:bg-blue-700'
               : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
           ]"
         >
-          I Agree
+          {{ saving ? 'Saving…' : 'I Agree' }}
         </button>
       </div>
     </div>

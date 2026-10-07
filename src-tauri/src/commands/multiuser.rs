@@ -11,7 +11,7 @@ use tauri::State;
 
 use super::AppState;
 use crate::boundary::registry::{dispatch, BoundaryCtx};
-use crate::boundary::{Actor, Request, Response};
+use crate::boundary::{Actor, BoundaryError, Request, Response};
 use crate::net::client::Client;
 use crate::net::host::{self, HostState, RunningHost};
 use crate::net::identity::{Fingerprint, HostIdentity};
@@ -35,7 +35,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn db_of(state: &State<AppState>) -> Result<Arc<crate::database::Database>, String> {
+fn db_of(state: &AppState) -> Result<Arc<crate::database::Database>, String> {
     let guard = lock(&state.db);
     Ok(Arc::clone(guard.as_ref().ok_or("Database not initialized")?))
 }
@@ -231,13 +231,35 @@ pub fn boundary_invoke(
     command: String,
     args: serde_json::Value,
 ) -> Result<Response, String> {
+    invoke_on(&state, command, args)
+}
+
+/// The body of `boundary_invoke`, separated from Tauri's `State` so the real
+/// startup sequence can be exercised in tests.
+pub fn invoke_on(
+    state: &AppState,
+    command: String,
+    args: serde_json::Value,
+) -> Result<Response, String> {
     let request = Request::new(command, args);
 
     if let Some(client) = lock(&state.multi_user.client).as_mut() {
         return client.invoke(request).map_err(|e| e.sentence());
     }
 
-    let db = db_of(&state)?;
+    // Answer "not registered" before asking for the database. Host-only
+    // commands are dispatched directly by the frontend once told they are not
+    // registered — and `init_app`, the command that *opens* the database, is
+    // one of them. Requiring an open database first meant the database could
+    // never be opened: startup failed silently and every later call failed
+    // with it.
+    if !state.registry.contains(&request.command) {
+        return Ok(Response::err(BoundaryError::UnknownCommand {
+            command: request.command,
+        }));
+    }
+
+    let db = db_of(state)?;
     let actor = Actor::local_owner();
     let ctx = BoundaryCtx::new(&db, &actor, &state.shared);
     Ok(dispatch(&state.registry, &ctx, request))
