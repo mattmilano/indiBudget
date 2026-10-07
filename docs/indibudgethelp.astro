@@ -466,11 +466,13 @@ import Icon from '@components/Icon.astro';
         </ol>
         <p>On the other computer:</p>
         <ol>
-          <li>Go to <strong>Sharing</strong> and fill in the host's address, the pairing code, and a name for this computer.</li>
+          <li>Go to <strong>Sharing</strong>. Computers hosting a budget on your network are listed under <strong>On this network</strong> — click the host to fill in its address. If it is not listed, type the address shown on the host instead.</li>
+          <li>Enter the pairing code and a name for this computer.</li>
           <li>Click <strong>Pair</strong>, then check the identity code shown matches the one on the host.</li>
           <li>Sign in with your login and password.</li>
         </ol>
-        <p>Pairing is a one-time step per computer. The computer remembers the host — its address and identity, never your password — so after a restart indiBudget opens on the Sharing screen and only asks you to sign in.</p>
+        <p>Pairing is a one-time step per computer. The computer remembers the host — its address and identity, never your password — so after a restart indiBudget opens on the Sharing screen and only asks you to sign in. The key that proves the computer was paired is kept in your operating system's keychain (Keychain on macOS, Credential Manager on Windows, the keyring on Linux) where there is one.</p>
+        <p>Pairing the same computer again — after forgetting the host, say — replaces its earlier entry on the host rather than listing it twice.</p>
         <p>If the host's address on your network changes, choose <strong>Host's address changed?</strong> and enter the new one. No new pairing is needed, and the host still has to prove it is the same computer. <strong>Forget this host</strong> removes it from this computer; joining again then needs a fresh pairing code.</p>
         <p>Five wrong codes closes the pairing window. That is deliberate — if it happens, click <strong>Start pairing</strong> on the host for a fresh code rather than retrying the old one.</p>
 
@@ -509,7 +511,8 @@ import Icon from '@components/Icon.astro';
         <h3>Working at the Same Time</h3>
         <p>Two people entering transactions never wait on each other. Logging the evening's receipts from two computers at once works exactly as you would hope.</p>
         <p>Budgets, accounts, categories and goals are different — two people editing the same one would mean somebody retypes their work. So opening one for editing holds it, and anyone else who opens it sees a note naming who is editing, <em>before</em> they start typing rather than after they try to save.</p>
-        <p>A hold is let go when you save, when you leave the screen, or on its own if the computer holding it goes away.</p>
+        <p>A hold is let go when you save, when you close the editor, or on its own once the person holding it has gone — when their last computer disconnects, not just one of them.</p>
+        <p>Underneath the holds, every save checks that what you were editing has not changed since you opened it. If it has, your save is refused with everything you typed left in place, so you can look at the latest version and decide — nothing is overwritten quietly.</p>
 
         <h3>Seeing Each Other's Changes</h3>
         <p>Screens check for changes every few seconds, so a transaction someone else adds appears without anyone pressing refresh. If the host is restarted, connected computers notice and reload rather than showing stale figures.</p>
@@ -521,6 +524,9 @@ import Icon from '@components/Icon.astro';
           <li>A banner tells everyone who closed it.</li>
           <li><strong>Any</strong> administrator can reopen it, not only the one who closed it, so a forgotten sign is never stuck waiting on someone who has gone out.</li>
         </ul>
+
+        <h3>Who Is Connected</h3>
+        <p>While hosting, the Sharing screen lists who is signed in right now, from which computer, and when they last did anything. Someone whose access is removed drops off the list on their next click.</p>
 
         <h3>Removing Access</h3>
         <p>Two separate levers, because they answer different questions:</p>
@@ -726,6 +732,12 @@ import Icon from '@components/Icon.astro';
 
         <h3>Backups and imports are unavailable while connected</h3>
         <p>These act on files, and the files live on the computer hosting the budget. Do them there. See <a href="#sharing">Sharing a Budget</a>.</p>
+
+        <h3>indiBudget says it is already open in another window</h3>
+        <p>Only one indiBudget window can have the budget open at a time on a computer — two would each keep their own idea of who is editing what. Switch to the window that is already open. If you cannot find one, it may still be closing; wait a moment and try again.</p>
+
+        <h3>The host is not listed under "On this network"</h3>
+        <p>Some networks — guest Wi-Fi, some mesh systems, and many office routers — do not pass on the announcements computers use to find each other, and a firewall on the host can block them too (they use UDP port 5353). Type the address shown on the host's Sharing screen instead; everything else works the same.</p>
 
         <h3>Blank or white window on startup (Linux)</h3>
         <p>Some GPU drivers cause WebKitGTK rendering issues. Try launching with:</p>

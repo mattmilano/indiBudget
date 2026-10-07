@@ -1252,3 +1252,92 @@ fn an_administrator_can_add_a_person_who_can_then_sign_in() {
     let mut riley = session(&fixture, "riley");
     assert!(riley.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
 }
+
+// ------------------------------------------------------ who is connected
+
+fn eventually(what: &str, mut check: impl FnMut() -> bool) {
+    for _ in 0..100 {
+        if check() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("never happened: {what}");
+}
+
+fn sign_in_from(fixture: &Fixture, login: &str, computer: &str) -> Client {
+    let (token, fingerprint) = pair_a_machine(fixture, computer);
+    let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
+    client.sign_in(&token, login, "Password1").unwrap();
+    client
+}
+
+#[test]
+fn the_host_lists_who_is_connected_by_person_and_computer() {
+    let fixture = hosted();
+    assert!(fixture.state.connected().is_empty());
+
+    let sam = sign_in_from(&fixture, "sam", "Study desktop");
+    let jo = sign_in_from(&fixture, "jo", "Jo's laptop");
+    let listed: Vec<(String, String)> = fixture
+        .state
+        .connected()
+        .into_iter()
+        .map(|s| (s.person, s.computer))
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            ("Jo".to_string(), "Jo's laptop".to_string()),
+            ("Sam".to_string(), "Study desktop".to_string()),
+        ]
+    );
+
+    drop(sam);
+    eventually("Sam leaves the list after disconnecting", || {
+        fixture.state.connected().len() == 1
+    });
+    drop(jo);
+    eventually("the list empties", || fixture.state.connected().is_empty());
+}
+
+#[test]
+fn a_removed_person_leaves_the_list_at_their_next_click() {
+    let fixture = hosted();
+    let mut alex = sign_in_from(&fixture, "alex", "Alex's laptop");
+    assert_eq!(fixture.state.connected().len(), 1);
+
+    let id = user_id(&fixture, "alex");
+    fixture
+        .db
+        .with_connection(|c| Ok(indibudget_lib::boundary::users::set_active(c, &id, false).unwrap()))
+        .unwrap();
+
+    assert!(alex.invoke(Request::new("get_accounts", json!(null))).is_err());
+    assert!(
+        fixture.state.connected().is_empty(),
+        "still listed after their access was removed"
+    );
+}
+
+#[test]
+fn holds_stay_while_the_same_person_is_still_on_another_computer() {
+    let fixture = hosted();
+    let mut jo = sign_in_from(&fixture, "jo", "Jo's laptop");
+    let mut sam_laptop = sign_in_from(&fixture, "sam", "Sam's laptop");
+    let sam_desktop = sign_in_from(&fixture, "sam", "Study desktop");
+
+    assert!(lease(&mut sam_laptop, "lease_acquire", "budget", "b1").is_ok());
+    drop(sam_laptop); // the lid closes; Sam is still at the desktop
+
+    eventually("the laptop leaves the list", || fixture.state.connected().len() == 2);
+    assert!(
+        lease(&mut jo, "lease_acquire", "budget", "b1").is_err_response(),
+        "Sam's hold was let go although Sam is still here on another computer"
+    );
+
+    drop(sam_desktop); // now Sam has really gone
+    eventually("the hold is let go with Sam's last computer", || {
+        lease(&mut jo, "lease_acquire", "budget", "b1").is_ok()
+    });
+}

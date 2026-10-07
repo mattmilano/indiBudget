@@ -18,6 +18,11 @@ export interface Account {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateAccountRequest {
@@ -47,6 +52,11 @@ export interface Transaction {
   imported_id?: string;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateTransactionRequest {
@@ -101,6 +111,11 @@ export interface Category {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateCategoryRequest {
@@ -123,6 +138,11 @@ export interface Budget {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateBudgetRequest {
@@ -166,6 +186,11 @@ export interface RecurringTransaction {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateRecurringRequest {
@@ -205,6 +230,11 @@ export interface SavingsGoal {
   status: GoalStatus;
   created_at: string;
   updated_at: string;
+  /**
+   * Which version of the row this is. Sent back with a save so a change
+   * someone else made in the meantime is refused rather than overwritten.
+   */
+  row_version: number;
 }
 
 export interface CreateGoalRequest {

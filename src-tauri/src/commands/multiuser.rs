@@ -25,7 +25,9 @@ use crate::boundary::{Actor, BoundaryError, Request, Response};
 use crate::database::repository;
 use crate::net::addresses::{parse_host_address, reachable_addresses, DEFAULT_PORT};
 use crate::net::client::Client;
-use crate::net::host::{self, HostState, RunningHost};
+use crate::net::credentials;
+use crate::net::discovery::{self, Advertisement, FoundHost};
+use crate::net::host::{self, HostState, RunningHost, Seat};
 use crate::net::identity::{Fingerprint, HostIdentity};
 
 /// The settings key under which a joining computer remembers its host.
@@ -45,6 +47,9 @@ pub struct MultiUser {
     /// a different — usually empty — budget, and look like everything had been
     /// lost.
     lost: Mutex<Option<String>>,
+    /// The announcement that lets joining computers find this one, while
+    /// hosting. Absent when the network would not carry it.
+    advert: Mutex<Option<Advertisement>>,
 }
 
 impl MultiUser {
@@ -78,17 +83,48 @@ where
 /// What a joining computer remembers about the host it paired with.
 ///
 /// Stored in this computer's own database, so a restart needs only a sign-in
-/// rather than a fresh pairing — which would also leave a stale entry in the
-/// host's list of paired computers each time. The device token is the
-/// credential that says "this machine was deliberately added"; it never goes
-/// to the frontend. The password is never stored.
+/// rather than a fresh pairing. The device token is the credential that says
+/// "this machine was deliberately added"; it never goes to the frontend, and
+/// it lives in the operating system's keychain wherever there is one (see
+/// `net::credentials`). The password is never stored.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SavedHost {
     pub address: String,
     pub fingerprint: String,
-    pub device_token: String,
+    /// Only when this computer has no keychain to keep it in. Hosts saved
+    /// before the keychain was used have it here too, and it moves to the
+    /// keychain at their next sign-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_token: Option<String>,
     pub label: String,
     pub last_login: Option<String>,
+}
+
+impl SavedHost {
+    /// The keychain entry for this host's token. Named by the host's identity,
+    /// which is what the token belongs to.
+    fn keychain_account(&self) -> String {
+        format!("host-{}", self.fingerprint)
+    }
+
+    fn device_token(&self) -> Option<String> {
+        self.device_token
+            .clone()
+            .or_else(|| credentials::load(&self.keychain_account()))
+    }
+
+    /// Keep a token, in the keychain if this computer has one.
+    fn keep_token(&mut self, token: String) {
+        self.device_token = if credentials::store(&self.keychain_account(), &token) {
+            None
+        } else {
+            Some(token)
+        };
+    }
+
+    fn forget_token(&self) {
+        credentials::forget(&self.keychain_account());
+    }
 }
 
 /// The part of [`SavedHost`] the screens may see.
@@ -144,6 +180,8 @@ pub struct HostingStatus {
     pub lost: bool,
     /// Why, in a sentence: the host went away, or ended this person's session.
     pub lost_reason: Option<String>,
+    /// While hosting: who is signed in from other computers right now.
+    pub connected_people: Vec<Seat>,
 }
 
 pub fn status_of(state: &AppState) -> HostingStatus {
@@ -155,11 +193,12 @@ pub fn status_of(state: &AppState) -> HostingStatus {
             .unwrap_or_default();
         (running.is_some(), addresses)
     };
-    let (fingerprint, pairing) = {
+    let (fingerprint, pairing, connected_people) = {
         let host_state = lock(&state.multi_user.state);
         (
             host_state.as_ref().map(|s| s.identity.fingerprint()),
             host_state.as_ref().map(|s| s.is_pairing()).unwrap_or(false),
+            host_state.as_ref().map(|s| s.connected()).unwrap_or_default(),
         )
     };
     let saved_host = load_saved_host(state).ok().flatten().map(|s| SavedHostView {
@@ -191,6 +230,7 @@ pub fn status_of(state: &AppState) -> HostingStatus {
         saved_host,
         lost: lost_reason.is_some(),
         lost_reason,
+        connected_people,
     }
 }
 
@@ -234,8 +274,13 @@ pub fn start_hosting_on(state: &AppState, port: Option<u16>) -> Result<HostingSt
     let running = host::start(Arc::clone(&host_state), SocketAddr::from(([0, 0, 0, 0], port)))
         .map_err(|e| e.sentence())?;
 
+    // Best effort: a network that blocks multicast still lets people type the
+    // address shown on the Sharing screen.
+    let advert = Advertisement::start(running.addr().port(), &host_state.identity.fingerprint()).ok();
+
     *lock(&state.multi_user.running) = Some(running);
     *lock(&state.multi_user.state) = Some(host_state);
+    *lock(&state.multi_user.advert) = advert;
     Ok(status_of(state))
 }
 
@@ -245,6 +290,9 @@ pub async fn start_hosting(app: AppHandle, port: Option<u16>) -> Result<HostingS
 }
 
 pub fn stop_hosting_on(state: &AppState) -> HostingStatus {
+    // Withdrawn first, so nobody picks this computer from a list as it stops.
+    let advert = lock(&state.multi_user.advert).take();
+    drop(advert);
     let running = lock(&state.multi_user.running).take();
     if let Some(mut running) = running {
         // Also disconnects every computer that had joined.
@@ -285,6 +333,17 @@ pub async fn close_pairing(app: AppHandle) -> Result<(), String> {
 
 // ---------------------------------------------------------------- joining
 
+/// Listen briefly for computers hosting a budget on this network.
+#[tauri::command]
+pub async fn discover_hosts(app: AppHandle) -> Result<Vec<FoundHost>, String> {
+    off_main_thread(app, |_| {
+        discovery::browse(discovery::LISTEN_FOR).map_err(|e| {
+            format!("Could not look for computers on this network ({e}). Type the host's address instead.")
+        })
+    })
+    .await
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PairRequest {
     pub address: String,
@@ -309,20 +368,33 @@ pub fn pair_on(state: &AppState, request: PairRequest) -> Result<HostingStatus, 
     let fingerprint = client
         .host_fingerprint()
         .ok_or("That computer did not present an identity.")?;
+
+    // Pairing again with the same host hands back the old token, so the host
+    // swaps that entry instead of listing this computer twice. Only once the
+    // host has shown the identity remembered from last time: this connection
+    // is not pinned, and the old token must not go to anyone else.
+    let earlier = load_saved_host(state)?;
+    let same_host = earlier
+        .as_ref()
+        .filter(|e| e.fingerprint == fingerprint.to_hex());
+    let replaces = same_host.and_then(SavedHost::device_token);
+
     let token = client
-        .pair(&request.code, &request.label)
+        .pair_again(&request.code, &request.label, replaces.as_deref())
         .map_err(|e| e.sentence())?;
 
-    store_saved_host(
-        state,
-        &SavedHost {
-            address: addr.to_string(),
-            fingerprint: fingerprint.to_hex(),
-            device_token: token,
-            label: request.label.trim().to_string(),
-            last_login: None,
-        },
-    )?;
+    if let Some(earlier) = earlier.as_ref().filter(|e| e.fingerprint != fingerprint.to_hex()) {
+        earlier.forget_token();
+    }
+    let mut saved = SavedHost {
+        address: addr.to_string(),
+        fingerprint: fingerprint.to_hex(),
+        device_token: None,
+        label: request.label.trim().to_string(),
+        last_login: same_host.and_then(|e| e.last_login.clone()),
+    };
+    saved.keep_token(token);
+    store_saved_host(state, &saved)?;
     Ok(status_of(state))
 }
 
@@ -358,12 +430,21 @@ pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingSt
     let addr = parse_host_address(&saved.address)?;
     let fingerprint = Fingerprint::from_hex(&saved.fingerprint).map_err(|e| e.sentence())?;
 
+    let token = saved.device_token().ok_or(
+        "This computer's pairing with that host could not be found in the system keychain. \
+         Unlock the keychain and try again, or forget the host and pair again.",
+    )?;
+
     let mut client = Client::connect(addr, fingerprint).map_err(|e| e.sentence())?;
     let session = client
-        .sign_in(&saved.device_token, &request.login, &request.password)
+        .sign_in(&token, &request.login, &request.password)
         .map_err(|e| e.sentence())?;
 
     saved.last_login = Some(request.login.trim().to_string());
+    // A host remembered before the keychain was used moves its token there now.
+    if saved.device_token.is_some() {
+        saved.keep_token(token);
+    }
     store_saved_host(state, &saved)?;
 
     *lock(&state.multi_user.client) = Some(client);
@@ -396,6 +477,9 @@ pub async fn disconnect_from_host(app: AppHandle) -> Result<HostingStatus, Strin
 /// pairing. The host still lists this computer until someone revokes it there.
 pub fn forget_on(state: &AppState) -> Result<HostingStatus, String> {
     disconnect_on(state);
+    if let Some(saved) = load_saved_host(state)? {
+        saved.forget_token();
+    }
     clear_saved_host(state)?;
     Ok(status_of(state))
 }

@@ -39,6 +39,19 @@ import type {
   SplitPart,
 } from '../types';
 
+/**
+ * The arguments for a save, with the version the form started from.
+ *
+ * `expected_row_version` travels beside `request`, not inside it, because the
+ * boundary checks it before the request is applied. Leaving it out keeps the
+ * older last-write-wins behaviour, for callers with no form to protect.
+ */
+function versioned<R>(request: R, expectedRowVersion?: number) {
+  return expectedRowVersion === undefined
+    ? { request }
+    : { request, expected_row_version: expectedRowVersion };
+}
+
 // Initialization
 export const initApp = () => invoke<void>('init_app');
 export const getDatabasePath = () => invoke<string>('get_database_path');
@@ -52,8 +65,10 @@ export const getAccounts = () => invoke<Account[]>('get_accounts');
 
 export const getAccount = (id: string) => invoke<Account>('get_account', { id });
 
-export const updateAccount = (request: Partial<Account> & { id: string }) =>
-  invoke<Account>('update_account', { request });
+export const updateAccount = (
+  request: Partial<Account> & { id: string },
+  expectedRowVersion?: number
+) => invoke<Account>('update_account', versioned(request, expectedRowVersion));
 
 export const deleteAccount = (id: string) => invoke<void>('delete_account', { id });
 
@@ -66,8 +81,10 @@ export const getTransactions = (filter: TransactionFilter = {}) =>
 
 export const getTransaction = (id: string) => invoke<Transaction>('get_transaction', { id });
 
-export const updateTransaction = (request: Partial<Transaction> & { id: string }) =>
-  invoke<Transaction>('update_transaction', { request });
+export const updateTransaction = (
+  request: Partial<Transaction> & { id: string },
+  expectedRowVersion?: number
+) => invoke<Transaction>('update_transaction', versioned(request, expectedRowVersion));
 
 export const deleteTransaction = (id: string) => invoke<void>('delete_transaction', { id });
 
@@ -83,8 +100,10 @@ export const getCategory = (id: string) => invoke<Category>('get_category', { id
 export const createCategory = (request: CreateCategoryRequest) =>
   invoke<Category>('create_category', { request });
 
-export const updateCategory = (request: Partial<Category> & { id: string }) =>
-  invoke<Category>('update_category', { request });
+export const updateCategory = (
+  request: Partial<Category> & { id: string },
+  expectedRowVersion?: number
+) => invoke<Category>('update_category', versioned(request, expectedRowVersion));
 
 export const deleteCategory = (id: string) => invoke<void>('delete_category', { id });
 
@@ -130,8 +149,10 @@ export const getGoals = () => invoke<SavingsGoal[]>('get_goals');
 export const updateGoalProgress = (id: string, amount: string) =>
   invoke<void>('update_goal_progress', { id, amount });
 
-export const updateGoal = (request: Partial<SavingsGoal> & { id: string }) =>
-  invoke<SavingsGoal>('update_goal', { request });
+export const updateGoal = (
+  request: Partial<SavingsGoal> & { id: string },
+  expectedRowVersion?: number
+) => invoke<SavingsGoal>('update_goal', versioned(request, expectedRowVersion));
 
 export const deleteGoal = (id: string) => invoke<void>('delete_goal', { id });
 
@@ -234,16 +255,20 @@ export const deleteSetting = (key: string) =>
 // Missing API wrappers for backend commands
 export const getBudget = (id: string) => invoke<Budget>('get_budget', { id });
 
-export const updateBudget = (request: Partial<Budget> & { id: string }) =>
-  invoke<Budget>('update_budget', { request });
+export const updateBudget = (
+  request: Partial<Budget> & { id: string },
+  expectedRowVersion?: number
+) => invoke<Budget>('update_budget', versioned(request, expectedRowVersion));
 
 export const deleteBudget = (id: string) => invoke<void>('delete_budget', { id });
 
 export const getRecurringById = (id: string) =>
   invoke<RecurringTransaction>('get_recurring_by_id', { id });
 
-export const updateRecurring = (request: Partial<RecurringTransaction> & { id: string }) =>
-  invoke<RecurringTransaction>('update_recurring', { request });
+export const updateRecurring = (
+  request: Partial<RecurringTransaction> & { id: string },
+  expectedRowVersion?: number
+) => invoke<RecurringTransaction>('update_recurring', versioned(request, expectedRowVersion));
 
 export const getGoal = (id: string) => invoke<SavingsGoal>('get_goal', { id });
 

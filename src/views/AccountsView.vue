@@ -4,6 +4,10 @@ import { useAccountsStore, useTransactionsStore } from '../stores';
 import type { Account, CreateAccountRequest, AccountType } from '../types';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ReconciliationModal from '../components/ReconciliationModal.vue';
+import EditHoldNotice from '../components/EditHoldNotice.vue';
+import SaveRefusalNotice from '../components/SaveRefusalNotice.vue';
+import { useLease } from '../composables/useLease';
+import { useSaveConflict } from '../composables/useSaveConflict';
 import { format } from 'date-fns';
 
 const accountsStore = useAccountsStore();
@@ -126,7 +130,40 @@ function resetForm() {
   };
 }
 
-function openEditModal(account: Account) {
+/**
+ * The version the edit form started from, and what to do if a save is refused
+ * because someone else saved first.
+ */
+const conflict = useSaveConflict<Account>({
+  label: 'account',
+  versionOf: (a) => a.row_version,
+  fetchLatest: async () => {
+    const id = editingAccount.value?.id;
+    if (!id) return undefined;
+    await accountsStore.fetchAccounts();
+    return accountsStore.accountsById[id];
+  },
+  loadIntoForm: fillEditForm,
+});
+
+/**
+ * The edit hold. Taken while the edit dialog is open on an account — never for
+ * a new one — and handed back when it closes. On a single computer it is always
+ * granted, so nothing here changes for someone using indiBudget alone.
+ */
+const lease = useLease('account', () => (showEditModal.value ? editingAccount.value?.id : null), {
+  // Refused as the form opened means it was locked before anything was typed,
+  // so it may be showing what the other person has since changed.
+  onRegained: (_id, refusedAt) => {
+    if (refusedAt === 'acquire') void conflict.loadLatest();
+  },
+});
+
+/** Locked until the hold is confirmed, so nobody types into a form they cannot save. */
+const editLocked = computed(() => !lease.held.value);
+const savingEdit = ref(false);
+
+function fillEditForm(account: Account) {
   editingAccount.value = account;
   editForm.value = {
     name: account.name,
@@ -136,13 +173,19 @@ function openEditModal(account: Account) {
     institution: account.institution || '',
     account_number_last4: account.account_number_last4 || '',
   };
+}
+
+function openEditModal(account: Account) {
+  fillEditForm(account);
+  conflict.begin(account);
   showEditModal.value = true;
 }
 
 async function handleEditSubmit() {
-  if (!editingAccount.value || !editForm.value.name.trim()) {
+  if (!editingAccount.value || !editForm.value.name.trim() || editLocked.value) {
     return;
   }
+  savingEdit.value = true;
   try {
     await accountsStore.updateAccount({
       id: editingAccount.value.id,
@@ -151,11 +194,15 @@ async function handleEditSubmit() {
       balance: editForm.value.balance,
       institution: editForm.value.institution || undefined,
       account_number_last4: editForm.value.account_number_last4 || undefined,
-    });
+    }, conflict.version.value);
     showEditModal.value = false;
     editingAccount.value = null;
   } catch (e) {
+    // The dialog stays open with everything typed; the refusal says why.
     console.error('Failed to update account:', e);
+    conflict.refused(e);
+  } finally {
+    savingEdit.value = false;
   }
 }
 
@@ -496,6 +543,21 @@ onMounted(() => {
           </button>
         </div>
         <form @submit.prevent="handleEditSubmit" class="p-4 space-y-4">
+          <EditHoldNotice
+            :message="lease.message.value"
+            :held-by="lease.heldBy.value"
+            :pending="lease.pending.value"
+            @retry="lease.retry()"
+          />
+          <SaveRefusalNotice
+            :sentence="conflict.sentence.value"
+            :kind="conflict.kind.value"
+            :note="conflict.note.value"
+            :reloading="conflict.reloading.value"
+            @load-latest="conflict.loadLatest()"
+            @keep-mine="conflict.keepMine()"
+          />
+          <fieldset :disabled="editLocked" :class="['space-y-4 min-w-0', { 'opacity-60': editLocked }]">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Account Name <span class="text-red-500">*</span>
@@ -567,6 +629,7 @@ onMounted(() => {
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
             />
           </div>
+          </fieldset>
           <div class="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -577,7 +640,8 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              :disabled="editLocked || savingEdit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>

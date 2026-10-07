@@ -64,7 +64,7 @@ fn h_create_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErr
             leasable: Some(Leasable::Account),
         },
     )?;
-    ok(account)
+    ok(settled(ctx, |conn| repository::get_account(conn, &account.id))?)
 }
 
 fn h_get_accounts(ctx: &BoundaryCtx, _args: Value) -> Result<Value, BoundaryError> {
@@ -87,14 +87,12 @@ fn h_update_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErr
     guard_version(ctx, &args, Stamped::Accounts, "account", &request.id)?;
 
     let id = request.id.clone();
-    let account = ctx
-        .db
+    ctx.db
         .with_connection(|conn| {
             let mut account = repository::get_account(conn, &id)?;
             // The same merge the local screen applies.
             request.apply_to(&mut account);
-            repository::update_account(conn, &account)?;
-            repository::get_account(conn, &id)
+            repository::update_account(conn, &account)
         })
         .map_err(db_err)?;
 
@@ -109,7 +107,7 @@ fn h_update_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErr
             leasable: Some(Leasable::Account),
         },
     )?;
-    ok(account)
+    ok(settled(ctx, |conn| repository::get_account(conn, &id))?)
 }
 
 fn h_delete_account(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
@@ -143,7 +141,7 @@ fn h_create_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, Boundar
             leasable: None,
         },
     )?;
-    ok(tx)
+    ok(settled(ctx, |conn| repository::get_transaction(conn, &tx.id))?)
 }
 
 fn h_get_transactions(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
@@ -173,13 +171,11 @@ fn h_update_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, Boundar
     guard_version(ctx, &args, Stamped::Transactions, "transaction", &request.id)?;
 
     let id = request.id.clone();
-    let tx = ctx
-        .db
+    ctx.db
         .with_connection(|conn| {
             let mut tx = repository::get_transaction(conn, &id)?;
             request.apply_to(&mut tx);
-            repository::update_transaction(conn, &tx)?;
-            Ok(tx)
+            repository::update_transaction(conn, &tx)
         })
         .map_err(db_err)?;
 
@@ -194,7 +190,7 @@ fn h_update_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, Boundar
             leasable: None,
         },
     )?;
-    ok(tx)
+    ok(settled(ctx, |conn| repository::get_transaction(conn, &id))?)
 }
 
 fn h_delete_transaction(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
@@ -234,9 +230,9 @@ fn h_get_calendar_events(ctx: &BoundaryCtx, args: Value) -> Result<Value, Bounda
 /// Apply the optimistic check when the caller supplied a version.
 ///
 /// A caller that sends `expected_row_version` is asking to be told if the row
-/// moved under them. One that omits it is taking the older last-write-wins
-/// behaviour, which is what the local screens still do until they carry the
-/// column.
+/// moved under them. The edit screens send the version the record had when the
+/// form opened. One that omits it — an older client, or a quick toggle that
+/// has no form to keep — takes the older last-write-wins behaviour.
 pub(super) fn guard_version(
     ctx: &BoundaryCtx,
     args: &Value,
@@ -250,6 +246,19 @@ pub(super) fn guard_version(
     ctx.db
         .with_connection(|conn| Ok(check_row_version(conn, table, label, id, expected)))
         .map_err(db_err)?
+}
+
+/// Read a row back once its write *and* its authorship stamp have landed.
+///
+/// The stamp is itself an UPDATE, so it moves `row_version` on again. Handing
+/// back the model as it stood before the stamp would give the screen a version
+/// the row has already left, and the person's very next save would be refused
+/// as a change made by someone else.
+pub(super) fn settled<T>(
+    ctx: &BoundaryCtx,
+    read: impl FnOnce(&rusqlite::Connection) -> crate::database::DbResult<T>,
+) -> Result<T, BoundaryError> {
+    ctx.db.with_connection(read).map_err(db_err)
 }
 
 // `delete_transaction` uses the pair-aware repository call so that deleting one

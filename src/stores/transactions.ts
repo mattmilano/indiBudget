@@ -62,11 +62,19 @@ export const useTransactionsStore = defineStore('transactions', () => {
     }
   }
 
-  async function updateTransaction(request: Partial<Transaction> & { id: string }) {
+  /**
+   * Save an edit. Transactions take no edit hold, so `expectedRowVersion` — the
+   * version the form opened with — is the only thing that stops one person's
+   * save silently replacing another's. A refusal is thrown to the caller.
+   */
+  async function updateTransaction(
+    request: Partial<Transaction> & { id: string },
+    expectedRowVersion?: number
+  ) {
     loading.value = true;
     error.value = null;
     try {
-      const updated = await api.updateTransaction(request);
+      const updated = await api.updateTransaction(request, expectedRowVersion);
       const index = transactions.value.findIndex(t => t.id === updated.id);
       if (index !== -1) {
         transactions.value[index] = updated;

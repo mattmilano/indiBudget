@@ -79,14 +79,17 @@
 ## Sharing a Budget Across Computers
 - **One budget, several people** — a couple or a family can all work from the same budget from their own computers
 - One computer **hosts** and the others connect to it over your home network; no cloud service is involved at any point
-- **Pairing with a short code** read off the host's screen, plus an identity code you can compare aloud to be sure you reached the right computer
+- **Finds the host for you** — computers hosting a budget on your network are listed by name, so nobody has to type an address
+- **Pairing with a short code** read off the host's screen, plus an identity code you can compare aloud to be sure you reached the right computer; the pairing key is kept in your operating system's keychain
 - **Per-person accounts** with their own login and password, secured with Argon2id
 - **Five permission areas** — Money, Planning, Structure, Reports and Admin — so a partner can have full access while a teenager tracks their own goals without seeing the mortgage
 - **Live updates** — a change made on one computer appears on the others within seconds
 - **Edit protection** — open a budget someone else is editing and it says so, by name, before you start typing rather than after
 - Two people can log the evening's receipts at the same time without ever waiting on each other
+- A save built on something that changed since you opened it is refused with your typing kept, never quietly overwritten
 - **Maintenance mode** — pause everyone's changes while you take a backup; people can still look at the budget, and any administrator can reopen it
-- **Manage paired computers** — see what is connected and revoke a lost or stolen machine without changing anyone's password
+- **See who is connected** — by person and computer, while you host
+- **Manage paired computers** — revoke a lost or stolen machine without changing anyone's password
 - **Deactivate someone who has left** without un-pairing the computers they used
 
 ## Security & Privacy

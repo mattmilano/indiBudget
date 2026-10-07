@@ -3,6 +3,10 @@ import { ref, onMounted, computed } from 'vue';
 import { useCategoriesStore } from '../stores';
 import type { Category, CreateCategoryRequest } from '../types';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import EditHoldNotice from '../components/EditHoldNotice.vue';
+import SaveRefusalNotice from '../components/SaveRefusalNotice.vue';
+import { useLease } from '../composables/useLease';
+import { useSaveConflict } from '../composables/useSaveConflict';
 
 const categoriesStore = useCategoriesStore();
 
@@ -105,11 +109,44 @@ function resetForm() {
   };
 }
 
-function openEditModal(category: Category) {
-  if (category.is_system) {
-    alert('System categories cannot be edited.');
-    return;
+/**
+ * The version the edit form started from, and what to do if a save is refused
+ * because someone else saved first.
+ */
+const conflict = useSaveConflict<Category>({
+  label: 'category',
+  versionOf: (c) => c.row_version,
+  fetchLatest: async () => {
+    const id = editingCategory.value?.id;
+    if (!id) return undefined;
+    await categoriesStore.fetchCategories();
+    return categoriesStore.categoriesById[id];
+  },
+  loadIntoForm: fillEditForm,
+});
+
+/**
+ * The edit hold. Taken while the edit dialog is open on a category — never for
+ * a new one — and handed back when it closes. On a single computer it is always
+ * granted, so nothing here changes for someone using indiBudget alone.
+ */
+const lease = useLease(
+  'category',
+  () => (showEditModal.value ? editingCategory.value?.id : null),
+  {
+    // Refused as the form opened means it was locked before anything was
+    // typed, so it may be showing what the other person has since changed.
+    onRegained: (_id, refusedAt) => {
+      if (refusedAt === 'acquire') void conflict.loadLatest();
+    },
   }
+);
+
+/** Locked until the hold is confirmed, so nobody types into a form they cannot save. */
+const editLocked = computed(() => !lease.held.value);
+const savingEdit = ref(false);
+
+function fillEditForm(category: Category) {
   editingCategory.value = category;
   editForm.value = {
     name: category.name,
@@ -117,13 +154,23 @@ function openEditModal(category: Category) {
     icon: category.icon || '',
     parent_id: category.parent_id || '',
   };
+}
+
+function openEditModal(category: Category) {
+  if (category.is_system) {
+    alert('System categories cannot be edited.');
+    return;
+  }
+  fillEditForm(category);
+  conflict.begin(category);
   showEditModal.value = true;
 }
 
 async function handleEditSubmit() {
-  if (!editingCategory.value || !editForm.value.name.trim()) {
+  if (!editingCategory.value || !editForm.value.name.trim() || editLocked.value) {
     return;
   }
+  savingEdit.value = true;
   try {
     const { updateCategory } = await import('../services/api');
     await updateCategory({
@@ -133,13 +180,16 @@ async function handleEditSubmit() {
       icon: editForm.value.icon || undefined,
       // Empty string clears the parent (backend treats "" as None)
       parent_id: editForm.value.parent_id,
-    });
+    }, conflict.version.value);
     await categoriesStore.fetchCategories();
     showEditModal.value = false;
     editingCategory.value = null;
   } catch (e) {
+    // The dialog stays open with everything typed; the refusal says why.
     console.error('Failed to update category:', e);
-    alert('Failed to update category. Please try again.');
+    conflict.refused(e);
+  } finally {
+    savingEdit.value = false;
   }
 }
 
@@ -464,6 +514,21 @@ onMounted(() => {
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Edit Category</h3>
         </div>
         <form @submit.prevent="handleEditSubmit" class="p-4 space-y-4">
+          <EditHoldNotice
+            :message="lease.message.value"
+            :held-by="lease.heldBy.value"
+            :pending="lease.pending.value"
+            @retry="lease.retry()"
+          />
+          <SaveRefusalNotice
+            :sentence="conflict.sentence.value"
+            :kind="conflict.kind.value"
+            :note="conflict.note.value"
+            :reloading="conflict.reloading.value"
+            @load-latest="conflict.loadLatest()"
+            @keep-mine="conflict.keepMine()"
+          />
+          <fieldset :disabled="editLocked" :class="['space-y-4 min-w-0', { 'opacity-60': editLocked }]">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Category Name <span class="text-red-500">*</span>
@@ -516,6 +581,7 @@ onMounted(() => {
               <span class="text-sm text-gray-500">{{ editForm.color }}</span>
             </div>
           </div>
+          </fieldset>
           <div class="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -526,7 +592,8 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              :disabled="editLocked || savingEdit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>

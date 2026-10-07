@@ -60,6 +60,12 @@ pub struct Account {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Which version of the row this is, read from the database and moved on
+    /// only by its AFTER UPDATE trigger — never written by the app. A screen
+    /// sends it back with a save so a change made by someone else in the
+    /// meantime is refused rather than silently overwritten.
+    #[serde(default = "super::first_row_version")]
+    pub row_version: i64,
 }
 
 impl Account {
@@ -77,6 +83,7 @@ impl Account {
             is_active: true,
             created_at: now,
             updated_at: now,
+            row_version: super::first_row_version(),
         }
     }
 
@@ -134,6 +141,11 @@ impl UpdateAccountRequest {
         if let Some(starting_balance) = self.starting_balance {
             account.starting_balance = starting_balance;
         }
+        // `account.balance` is the derived balance the repository read.
+        if let Some(target) = self.balance {
+            account.starting_balance += target - account.balance;
+            account.balance = target;
+        }
         if let Some(currency) = self.currency {
             account.currency = currency;
         }
@@ -154,9 +166,13 @@ pub struct UpdateAccountRequest {
     pub id: String,
     pub name: Option<String>,
     pub account_type: Option<AccountType>,
-    /// Starting balance can only be adjusted, not the current computed balance
-    #[serde(alias = "balance")]
+    /// The opening balance, set directly.
     pub starting_balance: Option<Decimal>,
+    /// What the *current* balance should now read, as the edit screen shows
+    /// it. The current balance is derived, so this moves the opening balance
+    /// by the difference. It used to be taken as the opening balance itself,
+    /// which counted every existing transaction a second time on each save.
+    pub balance: Option<Decimal>,
     pub currency: Option<String>,
     pub institution: Option<String>,
     pub account_number_last4: Option<String>,

@@ -292,12 +292,29 @@ impl Client {
     /// The proof is computed over the certificate this connection actually
     /// received, which is what defeats a machine-in-the-middle.
     pub fn pair(&mut self, code: &str, label: &str) -> Result<String, BoundaryError> {
+        self.pair_again(code, label, None)
+    }
+
+    /// Pair, handing back the token from an earlier pairing with this same
+    /// host so the host replaces that entry instead of adding a second one.
+    ///
+    /// Only pass `replaces` once [`Client::host_fingerprint`] has been checked
+    /// against the identity remembered from that earlier pairing. This
+    /// connection's certificate is not pinned, and the old token must never go
+    /// to a computer that has not proved it is the same host.
+    pub fn pair_again(
+        &mut self,
+        code: &str,
+        label: &str,
+        replaces: Option<&str>,
+    ) -> Result<String, BoundaryError> {
         let cert = self.peer_certificate()?;
         let proof = pairing_proof(code, &cert);
 
         match self.exchange(ClientMessage::Pair {
             proof,
             label: label.to_string(),
+            replaces: replaces.map(str::to_string),
         })? {
             ServerMessage::Paired { device_token } => Ok(device_token),
             ServerMessage::Refused { sentence, .. } => Err(BoundaryError::invalid(sentence)),

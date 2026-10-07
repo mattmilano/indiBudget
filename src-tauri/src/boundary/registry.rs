@@ -164,7 +164,15 @@ pub fn dispatch(registry: &Registry, ctx: &BoundaryCtx, request: Request) -> Res
         }
     }
 
-    Response::from_result((registration.handler)(ctx, request.args))
+    let response = Response::from_result((registration.handler)(ctx, request.args));
+
+    // Carry the write out of the write-ahead log into the database file itself,
+    // so a copy of the file taken by hand has it. Reads never write; anything
+    // else might, and a checkpoint with nothing to carry costs nothing.
+    if response.is_ok() && registration.required.access != super::Access::Read {
+        ctx.db.checkpoint();
+    }
+    response
 }
 
 /// Dispatch from a JSON string, for the transport to call in phase 3.

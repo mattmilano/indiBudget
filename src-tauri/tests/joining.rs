@@ -17,6 +17,7 @@ use indibudget_lib::commands::multiuser::{
 use indibudget_lib::commands::AppState;
 use indibudget_lib::database::{repository, Database};
 use indibudget_lib::models::{Account, AccountType};
+use indibudget_lib::net::credentials;
 use indibudget_lib::net::host::{self, HostState, RunningHost};
 use indibudget_lib::net::identity::HostIdentity;
 use indibudget_lib::net::pairing::list_devices;
@@ -84,6 +85,8 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     let scratch = std::env::temp_dir().join(format!("indibudget-joining-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
     std::env::set_var("XDG_DATA_HOME", &scratch);
+    // Never the real keychain of whoever runs the tests.
+    credentials::use_memory_store_for_tests();
 
     let mut host = host_with("Joint Checking");
     let address = host.running.addr().to_string();
@@ -103,6 +106,19 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     assert_eq!(saved.address, address);
     assert!(!saved.fingerprint_groups.is_empty());
     assert_eq!(devices(&host), 1);
+    let stored = laptop
+        .db
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .with_connection(|c| repository::get_setting(c, "joined_host"))
+        .unwrap()
+        .unwrap();
+    assert!(
+        !stored.contains("device_token"),
+        "with a keychain available, the token stays out of the database: {stored}"
+    );
 
     // ---- sign in; data now comes from the host, not this computer
     sign_in(&laptop, None).expect("sign in");
@@ -119,6 +135,37 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     sign_in(&laptop, None).expect("sign in after restart, without pairing again");
     assert_eq!(account_names(&laptop).unwrap(), vec!["Joint Checking"]);
     assert_eq!(devices(&host), 1, "a restart must not add another paired computer");
+
+    // ---- pairing the same computer again replaces its entry on the host
+    disconnect_on(&laptop);
+    let code = host.state.open_pairing();
+    pair_on(&laptop, PairRequest { address: address.clone(), code, label: "Laptop".into() })
+        .expect("pairing again");
+    assert_eq!(devices(&host), 1, "pairing again must not list this computer twice");
+    sign_in(&laptop, None).expect("the new pairing works");
+
+    // ---- a host remembered before the keychain was used moves its token there
+    disconnect_on(&laptop);
+    let local = laptop.db.lock().unwrap().clone().unwrap();
+    let raw = local
+        .with_connection(|c| repository::get_setting(c, "joined_host"))
+        .unwrap()
+        .unwrap();
+    let mut old_style: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let account = format!("host-{}", old_style["fingerprint"].as_str().unwrap());
+    let token = credentials::load(&account).expect("token in the keychain");
+    credentials::forget(&account);
+    old_style["device_token"] = json!(token);
+    local
+        .with_connection(|c| repository::set_setting(c, "joined_host", &old_style.to_string()))
+        .unwrap();
+    sign_in(&laptop, None).expect("an older saved host still signs in");
+    let raw = local
+        .with_connection(|c| repository::get_setting(c, "joined_host"))
+        .unwrap()
+        .unwrap();
+    assert!(!raw.contains("device_token"), "moved out of the database: {raw}");
+    assert_eq!(credentials::load(&account).as_deref(), Some(token.as_str()));
 
     // ---- a "new address" pointing at a different computer is refused
     disconnect_on(&laptop);

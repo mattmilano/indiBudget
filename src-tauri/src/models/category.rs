@@ -37,6 +37,12 @@ pub struct Category {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Which version of the row this is, read from the database and moved on
+    /// only by its AFTER UPDATE trigger — never written by the app. A screen
+    /// sends it back with a save so a change made by someone else in the
+    /// meantime is refused rather than silently overwritten.
+    #[serde(default = "super::first_row_version")]
+    pub row_version: i64,
 }
 
 impl Category {
@@ -53,6 +59,7 @@ impl Category {
             is_active: true,
             created_at: now,
             updated_at: now,
+            row_version: super::first_row_version(),
         }
     }
 
@@ -77,6 +84,7 @@ impl Category {
             is_active: true,
             created_at: now,
             updated_at: now,
+            row_version: super::first_row_version(),
         }
     }
 }

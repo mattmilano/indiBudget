@@ -8,7 +8,9 @@
 //! Synchronous, one thread per connection. A household does not need an async
 //! executor, and a dull transport is one that cannot surprise the data.
 
+use chrono::Utc;
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -19,7 +21,7 @@ use std::time::{Duration, Instant};
 use super::frame::{read_frame, write_frame};
 use super::identity::HostIdentity;
 use super::pairing::{
-    attempt_pairing, device_for_token, device_is_active, generate_code, register_device, touch_device, PairingOutcome,
+    attempt_pairing, device_for_token, Device, device_is_active, generate_code, register_device, touch_device, PairingOutcome,
     PairingWindow,
 };
 use super::protocol::{ClientMessage, ServerMessage};
@@ -41,6 +43,73 @@ pub struct HostState {
     pub shared: Arc<SharedState>,
     pairing: Mutex<Option<PairingWindow>>,
     throttle: Throttle,
+    seats: Seats,
+}
+
+/// Someone signed in from another computer, as the Sharing screen lists them.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Seat {
+    pub person: String,
+    pub computer: String,
+    pub connected_at: String,
+    pub last_active_at: String,
+}
+
+/// Who is connected right now, one entry per signed-in connection.
+///
+/// The same person can be signed in from two computers at once. Their edit
+/// holds are let go when the *last* of those goes, not the first: closing the
+/// laptop lid must not free the budget they still have open on the desktop.
+#[derive(Default)]
+struct Seats {
+    next: AtomicU64,
+    held: Mutex<HashMap<u64, (String, Seat)>>,
+}
+
+impl Seats {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u64, (String, Seat)>> {
+        self.held.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn take(&self, user_id: &str, person: &str, computer: &str) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        let now = Utc::now().to_rfc3339();
+        self.lock().insert(
+            id,
+            (
+                user_id.to_string(),
+                Seat {
+                    person: person.to_string(),
+                    computer: computer.to_string(),
+                    connected_at: now.clone(),
+                    last_active_at: now,
+                },
+            ),
+        );
+        id
+    }
+
+    fn touch(&self, id: u64, person: &str) {
+        if let Some((_, seat)) = self.lock().get_mut(&id) {
+            seat.person = person.to_string();
+            seat.last_active_at = Utc::now().to_rfc3339();
+        }
+    }
+
+    /// Give up a seat. Answers whether that person still has another.
+    fn leave(&self, id: u64) -> bool {
+        let mut held = self.lock();
+        match held.remove(&id) {
+            Some((user_id, _)) => held.values().any(|(other, _)| *other == user_id),
+            None => false,
+        }
+    }
+
+    fn list(&self) -> Vec<Seat> {
+        let mut seats: Vec<Seat> = self.lock().values().map(|(_, s)| s.clone()).collect();
+        seats.sort_by(|a, b| a.person.cmp(&b.person).then(a.computer.cmp(&b.computer)));
+        seats
+    }
 }
 
 impl HostState {
@@ -57,6 +126,7 @@ impl HostState {
             shared,
             pairing: Mutex::new(None),
             throttle: Throttle::new(),
+            seats: Seats::default(),
         }
     }
 
@@ -66,6 +136,11 @@ impl HostState {
         let mut slot = self.lock_pairing();
         *slot = Some(PairingWindow::open(code.clone(), Instant::now()));
         code
+    }
+
+    /// Who is signed in from other computers right now.
+    pub fn connected(&self) -> Vec<Seat> {
+        self.seats.list()
     }
 
     pub fn close_pairing(&self) {
@@ -86,7 +161,7 @@ impl HostState {
     }
 
     /// Judge a pairing proof, updating the window.
-    fn judge_pairing(&self, proof: &str, label: &str) -> ServerMessage {
+    fn judge_pairing(&self, proof: &str, label: &str, replaces: Option<&str>) -> ServerMessage {
         let mut slot = self.lock_pairing();
         let Some(window) = slot.take() else {
             // Distinct from a wrong code on purpose: there is nothing to guess
@@ -107,7 +182,7 @@ impl HostState {
             PairingOutcome::Accepted => {
                 match self
                     .db
-                    .with_connection(|conn| Ok(register_device(conn, label)))
+                    .with_connection(|conn| Ok(register_device(conn, label, replaces)))
                 {
                     Ok(Ok((_, token))) => ServerMessage::Paired {
                         device_token: token,
@@ -138,7 +213,7 @@ impl HostState {
         token: &str,
         login: &str,
         password: &str,
-    ) -> Result<(Actor, String), ServerMessage> {
+    ) -> Result<(Actor, Device), ServerMessage> {
         let now = Instant::now();
 
         if let Some(wait) = self.throttle.retry_after(login, now) {
@@ -179,7 +254,7 @@ impl HostState {
                 let _ = self
                     .db
                     .with_connection(|conn| Ok(touch_device(conn, &device.id)));
-                Ok((actor, device.id))
+                Ok((actor, device))
             }
             Err(e) => {
                 self.throttle.record_failure(login, now);
@@ -197,6 +272,7 @@ struct Session {
     user_id: String,
     device_id: String,
     actor: Actor,
+    seat: u64,
 }
 
 /// Why a session ended partway, in the person's words.
@@ -225,6 +301,14 @@ impl HostState {
             .and_then(|r| r.ok())
             .flatten()
             .ok_or(ACCESS_REMOVED)
+    }
+
+    /// A connection is finished with: give up its seat, and let go of what the
+    /// person held unless they are still here on another computer.
+    fn leave(&self, session: &Session) {
+        if !self.seats.leave(session.seat) {
+            self.release_holds_of(&session.actor);
+        }
     }
 
     fn release_holds_of(&self, actor: &Actor) {
@@ -406,7 +490,7 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
     // for the rest of the lease. Passive expiry would clear it eventually;
     // this clears it now.
     if let Some(session) = session.as_ref() {
-        state.release_holds_of(&session.actor);
+        state.leave(session);
     }
 }
 
@@ -416,11 +500,11 @@ fn handle_message(
     message: ClientMessage,
 ) -> ServerMessage {
     match message {
-        ClientMessage::Pair { proof, label } => {
+        ClientMessage::Pair { proof, label, replaces } => {
             if session.is_some() {
                 return ServerMessage::refused("This computer is already connected.");
             }
-            state.judge_pairing(&proof, &label)
+            state.judge_pairing(&proof, &label, replaces.as_deref())
         }
 
         ClientMessage::Authenticate {
@@ -428,15 +512,23 @@ fn handle_message(
             login,
             password,
         } => match state.judge_sign_in(&device_token, &login, &password) {
-            Ok((signed_in, device_id)) => {
+            Ok((signed_in, device)) => {
                 let reply = ServerMessage::Authenticated {
                     display_name: signed_in.display_name.clone(),
                     is_owner: signed_in.is_owner,
                 };
+                // Signing in again on the same connection gives up the old seat.
+                if let Some(previous) = session.take() {
+                    state.leave(&previous);
+                }
+                let seat = state
+                    .seats
+                    .take(&signed_in.user_id, &signed_in.display_name, &device.label);
                 *session = Some(Session {
                     user_id: signed_in.user_id.clone(),
-                    device_id,
+                    device_id: device.id,
                     actor: signed_in,
+                    seat,
                 });
                 reply
             }
@@ -450,9 +542,15 @@ fn handle_message(
 
             // The actor built at sign-in is a claim to re-check, not a fact.
             match state.current_standing(current) {
-                Ok(fresh) => current.actor = fresh,
+                Ok(fresh) => {
+                    state.seats.touch(current.seat, &fresh.display_name);
+                    current.actor = fresh;
+                }
                 Err(why) => {
+                    // Off the list at once, and everything they held let go:
+                    // their other computers are refused on their next click too.
                     let ended = session.take().expect("checked above");
+                    state.seats.leave(ended.seat);
                     state.release_holds_of(&ended.actor);
                     return ServerMessage::refused(why);
                 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { useMultiUserStore } from '../stores/multiuser';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useMultiUserStore, type FoundHost } from '../stores/multiuser';
 import * as api from '../services/api';
 
 const store = useMultiUserStore();
@@ -19,6 +19,49 @@ const joinPassword = ref('');
 const changeAddress = ref(false);
 const newAddress = ref('');
 const saved = computed(() => store.status.saved_host);
+
+// Computers announcing a budget on this network, so nobody has to type an
+// address. Only a convenience: pairing still proves which computer it is.
+const found = ref<FoundHost[]>([]);
+const looking = ref(false);
+const lookedOnce = ref(false);
+async function lookForHosts() {
+  looking.value = true;
+  try {
+    found.value = await store.discoverHosts();
+  } catch {
+    found.value = [];
+  } finally {
+    looking.value = false;
+    lookedOnce.value = true;
+  }
+}
+
+// While hosting, who is connected changes without any news to say so.
+let statusTimer: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => store.status.hosting,
+  (hosting) => {
+    if (hosting && !statusTimer) {
+      statusTimer = setInterval(() => store.refreshStatus().catch(() => {}), 5000);
+    } else if (!hosting && statusTimer) {
+      clearInterval(statusTimer);
+      statusTimer = null;
+    }
+  },
+  { immediate: true }
+);
+onBeforeUnmount(() => {
+  if (statusTimer) clearInterval(statusTimer);
+});
+
+function since(iso: string) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+}
 
 function signIn() {
   return run('Could not sign in', () =>
@@ -99,6 +142,7 @@ async function loadShared() {
 onMounted(async () => {
   await store.refreshStatus();
   if (store.status.saved_host?.last_login) joinLogin.value = store.status.saved_host.last_login;
+  if (!store.status.saved_host && !store.isSharing) lookForHosts();
   if (store.isSharing) {
     store.startBeat();
     await loadShared();
@@ -233,6 +277,38 @@ onMounted(async () => {
             Connect to a budget hosted on another computer. You will need the address and the
             pairing code shown there. You only pair once; after that, signing in is enough.
           </p>
+          <div class="mb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm text-gray-700 dark:text-gray-300">On this network</span>
+              <button
+                :disabled="looking"
+                class="text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                @click="lookForHosts"
+              >
+                {{ looking ? 'Looking…' : 'Look again' }}
+              </button>
+            </div>
+            <ul v-if="found.length" class="space-y-1">
+              <li v-for="h in found" :key="h.address">
+                <button
+                  class="w-full text-left px-3 py-2 rounded-lg border text-sm"
+                  :class="
+                    joinAddress === h.address
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  "
+                  @click="joinAddress = h.address"
+                >
+                  <span class="font-medium text-gray-900 dark:text-white">indiBudget on {{ h.computer }}</span>
+                  <span class="block text-xs text-gray-500 dark:text-gray-400">{{ h.address }}</span>
+                </button>
+              </li>
+            </ul>
+            <p v-else-if="lookedOnce && !looking" class="text-xs text-gray-500 dark:text-gray-400">
+              No computer this one can hear is hosting a budget. Check the host has started
+              hosting, or type its address below.
+            </p>
+          </div>
           <input
             v-model="joinAddress"
             placeholder="Address shown on the host, e.g. 192.168.1.20:7420"
@@ -348,6 +424,26 @@ onMounted(async () => {
         >
           Reopen ({{ closedBy }} closed it)
         </button>
+      </div>
+
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-3">Connected now</h2>
+        <ul v-if="store.status.connected_people.length" class="divide-y divide-gray-100 dark:divide-gray-800">
+          <li
+            v-for="(seat, i) in store.status.connected_people"
+            :key="i"
+            class="py-2 flex items-center justify-between text-sm"
+          >
+            <span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ seat.person }}</span>
+              <span class="text-gray-600 dark:text-gray-400"> on {{ seat.computer }}</span>
+            </span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">active {{ since(seat.last_active_at) }}</span>
+          </li>
+        </ul>
+        <p v-else class="text-sm text-gray-600 dark:text-gray-400">
+          Nobody is signed in from another computer right now.
+        </p>
       </div>
 
       <div v-if="devices.length" class="p-5 rounded-xl border border-gray-200 dark:border-gray-700">

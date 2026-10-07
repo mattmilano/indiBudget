@@ -26,6 +26,7 @@ pub fn run() {
             commands::multiuser::stop_hosting,
             commands::multiuser::open_pairing,
             commands::multiuser::close_pairing,
+            commands::multiuser::discover_hosts,
             commands::multiuser::pair_with_host,
             commands::multiuser::connect_to_host,
             commands::multiuser::disconnect_from_host,

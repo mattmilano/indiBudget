@@ -4,6 +4,10 @@ import { useBudgetsStore, useCategoriesStore } from '../stores';
 import type { CreateBudgetRequest, BudgetPeriod, BudgetStatus } from '../types';
 import { format, startOfMonth } from 'date-fns';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import EditHoldNotice from '../components/EditHoldNotice.vue';
+import SaveRefusalNotice from '../components/SaveRefusalNotice.vue';
+import { useLease } from '../composables/useLease';
+import { useSaveConflict } from '../composables/useSaveConflict';
 
 const budgetsStore = useBudgetsStore();
 const categoriesStore = useCategoriesStore();
@@ -206,7 +210,44 @@ function resetForm() {
   };
 }
 
-function openEditModal(status: BudgetStatus) {
+/**
+ * The version the edit form started from, and what to do if a save is refused
+ * because someone else saved first.
+ */
+const conflict = useSaveConflict<BudgetStatus>({
+  label: 'budget',
+  versionOf: (s) => s.budget.row_version,
+  fetchLatest: async () => {
+    const id = editingBudget.value?.budget.id;
+    if (!id) return undefined;
+    await budgetsStore.fetchBudgetStatus();
+    return budgetsStore.budgetStatus.find(s => s.budget.id === id);
+  },
+  loadIntoForm: fillEditForm,
+});
+
+/**
+ * The edit hold. Taken while the edit dialog is open on a budget — never for a
+ * new one — and handed back when it closes. On a single computer it is always
+ * granted, so nothing here changes for someone using indiBudget alone.
+ */
+const lease = useLease(
+  'budget',
+  () => (showEditModal.value ? editingBudget.value?.budget.id : null),
+  {
+    // Refused as the form opened means it was locked before anything was
+    // typed, so it may be showing what the other person has since changed.
+    onRegained: (_id, refusedAt) => {
+      if (refusedAt === 'acquire') void conflict.loadLatest();
+    },
+  }
+);
+
+/** Locked until the hold is confirmed, so nobody types into a form they cannot save. */
+const editLocked = computed(() => !lease.held.value);
+const savingEdit = ref(false);
+
+function fillEditForm(status: BudgetStatus) {
   editingBudget.value = status;
   editForm.value = {
     name: status.budget.name,
@@ -215,11 +256,17 @@ function openEditModal(status: BudgetStatus) {
     start_date: status.budget.start_date,
     rollover: status.budget.rollover,
   };
+}
+
+function openEditModal(status: BudgetStatus) {
+  fillEditForm(status);
+  conflict.begin(status);
   showEditModal.value = true;
 }
 
 async function handleEditSubmit() {
-  if (!editingBudget.value) return;
+  if (!editingBudget.value || editLocked.value) return;
+  savingEdit.value = true;
   try {
     await budgetsStore.updateBudget({
       id: editingBudget.value.budget.id,
@@ -228,12 +275,15 @@ async function handleEditSubmit() {
       period: editForm.value.period,
       start_date: editForm.value.start_date,
       rollover: editForm.value.rollover,
-    });
+    }, conflict.version.value);
     showEditModal.value = false;
     editingBudget.value = null;
   } catch (e) {
+    // The dialog stays open with everything typed; the refusal says why.
     console.error('Failed to update budget:', e);
-    alert('Failed to update budget. Please try again.');
+    conflict.refused(e);
+  } finally {
+    savingEdit.value = false;
   }
 }
 
@@ -505,6 +555,21 @@ onMounted(async () => {
           <p class="text-sm text-gray-500 dark:text-gray-400">{{ editingBudget.category_name }}</p>
         </div>
         <form @submit.prevent="handleEditSubmit" class="p-4 space-y-4">
+          <EditHoldNotice
+            :message="lease.message.value"
+            :held-by="lease.heldBy.value"
+            :pending="lease.pending.value"
+            @retry="lease.retry()"
+          />
+          <SaveRefusalNotice
+            :sentence="conflict.sentence.value"
+            :kind="conflict.kind.value"
+            :note="conflict.note.value"
+            :reloading="conflict.reloading.value"
+            @load-latest="conflict.loadLatest()"
+            @keep-mine="conflict.keepMine()"
+          />
+          <fieldset :disabled="editLocked" :class="['space-y-4 min-w-0', { 'opacity-60': editLocked }]">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Budget Name</label>
             <input
@@ -557,6 +622,7 @@ onMounted(async () => {
               Roll over unused budget to next period
             </label>
           </div>
+          </fieldset>
           <div class="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -567,7 +633,8 @@ onMounted(async () => {
             </button>
             <button
               type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              :disabled="editLocked || savingEdit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>

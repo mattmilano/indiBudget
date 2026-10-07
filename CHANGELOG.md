@@ -24,12 +24,18 @@ across the home network — no cloud service is involved at any point.
   someone. Anyone can change their own password
 - Five permission areas — Money, Planning, Structure, Reports and Admin — each
   settable to no access, read, or read and write
+- Finding the host on your network automatically, rather than typing its
+  address (typing it still works where the network does not pass the
+  announcements on)
+- A list of who is connected right now, by person and computer
 - Live updates, so a change made on one computer appears on the others within
   seconds
 - Edit protection on budgets, accounts, categories and goals: opening one
   someone else is editing says so by name, before the typing rather than after
   the save. Transactions deliberately take no hold, so two people can log the
-  evening's receipts at once without waiting on each other
+  evening's receipts at once without waiting on each other. Underneath, a save
+  built on a record that changed since it was opened is refused, with what
+  you typed kept in place
 - Maintenance mode, pausing everyone's changes while a backup is taken. Reading
   keeps working, and any administrator can reopen it
 - Paired-computer management, including revoking a lost or stolen machine
@@ -47,6 +53,10 @@ across the home network — no cloud service is involved at any point.
 
 ### Changed
 
+- Only one window can have the budget open at a time, so two windows never
+  keep separate ideas of who is editing what
+- The database file is brought fully up to date after every change, so a copy
+  taken by hand is always complete
 - Account balances are now derived from the opening balance plus every
   transaction, rather than stored and updated. A balance can no longer drift out
   of step with the transactions behind it
@@ -62,6 +72,11 @@ across the home network — no cloud service is involved at any point.
 
 ### Fixed
 
+- Saving an account edit no longer moves its balance: the balance box showed
+  the current balance but saved it as the opening balance, counting every
+  transaction a second time
+- Recording a goal contribution added it in place of the amount already saved,
+  rather than on top of it
 - Import no longer reports a false duplicate for legitimately similar
   transactions
 - Backup import correctly reports real errors rather than silently skipping
@@ -74,6 +89,9 @@ across the home network — no cloud service is involved at any point.
 - Content Security Policy to guard against script injection
 - Sharing traffic is encrypted in transit, and each computer refuses to connect
   if the host's identity ever changes
+- The key that proves a computer was paired is kept in the operating system's
+  keychain where one is available. Pairing the same computer again replaces
+  its earlier entry rather than adding a second
 - Repeated failed sign-ins are slowed down, and a failed attempt reveals nothing
   about whether that login exists
 - Access changes, deactivation and revoking a computer take effect on the very

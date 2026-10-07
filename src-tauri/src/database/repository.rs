@@ -34,6 +34,7 @@ fn account_from_row(row: &Row) -> rusqlite::Result<Account> {
         is_active: row.get::<_, i32>(7)? == 1,
         created_at: parse_datetime(&row.get::<_, String>(8)?),
         updated_at: parse_datetime(&row.get::<_, String>(9)?),
+        row_version: row.get(10)?,
     })
 }
 
@@ -70,6 +71,7 @@ fn transaction_from_row(row: &Row) -> rusqlite::Result<Transaction> {
         updated_at: updated_at_str
             .map(|s| parse_datetime(&s))
             .unwrap_or_else(Utc::now),
+        row_version: row.get(18)?,
     })
 }
 
@@ -85,6 +87,7 @@ fn category_from_row(row: &Row) -> rusqlite::Result<Category> {
         is_active: row.get::<_, i32>(7)? == 1,
         created_at: parse_datetime(&row.get::<_, String>(8)?),
         updated_at: parse_datetime(&row.get::<_, String>(9)?),
+        row_version: row.get(10)?,
     })
 }
 
@@ -102,6 +105,7 @@ fn budget_from_row(row: &Row) -> rusqlite::Result<Budget> {
         is_active: row.get::<_, i32>(8)? == 1,
         created_at: parse_datetime(&row.get::<_, String>(9)?),
         updated_at: parse_datetime(&row.get::<_, String>(10)?),
+        row_version: row.get(11)?,
     })
 }
 
@@ -126,6 +130,7 @@ fn recurring_from_row(row: &Row) -> rusqlite::Result<RecurringTransaction> {
         is_active: row.get::<_, i32>(15)? == 1,
         created_at: parse_datetime(&row.get::<_, String>(16)?),
         updated_at: parse_datetime(&row.get::<_, String>(17)?),
+        row_version: row.get(18)?,
     })
 }
 
@@ -145,6 +150,7 @@ fn goal_from_row(row: &Row) -> rusqlite::Result<SavingsGoal> {
         status: GoalStatus::from_str(row.get::<_, String>(10)?.as_str()),
         created_at: parse_datetime(&row.get::<_, String>(11)?),
         updated_at: parse_datetime(&row.get::<_, String>(12)?),
+        row_version: row.get(13)?,
     })
 }
 
@@ -311,7 +317,7 @@ pub fn compute_all_account_balances(conn: &Connection) -> DbResult<std::collecti
 
 pub fn get_account(conn: &Connection, id: &str) -> DbResult<Account> {
     let mut account = conn.query_row(
-        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at
+        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at, row_version
          FROM accounts WHERE id = ?1",
         [id],
         account_from_row,
@@ -327,7 +333,7 @@ pub fn get_account(conn: &Connection, id: &str) -> DbResult<Account> {
 
 pub fn get_all_accounts(conn: &Connection) -> DbResult<Vec<Account>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at
+        "SELECT id, name, account_type, starting_balance, currency, institution, account_number_last4, is_active, created_at, updated_at, row_version
          FROM accounts WHERE is_active = 1 ORDER BY name",
     )?;
     let mut accounts: Vec<Account> = stmt
@@ -407,7 +413,7 @@ pub fn get_transfer_pair(conn: &Connection, transfer_pair_id: &str, exclude_id: 
     conn.query_row(
         "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
          status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
-         imported_id, created_at, updated_at
+         imported_id, created_at, updated_at, row_version
          FROM transactions WHERE transfer_pair_id = ?1 AND id != ?2",
         params![transfer_pair_id, exclude_id],
         transaction_from_row,
@@ -465,7 +471,7 @@ pub fn get_transaction(conn: &Connection, id: &str) -> DbResult<Transaction> {
     conn.query_row(
         "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
          status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
-         imported_id, created_at, updated_at
+         imported_id, created_at, updated_at, row_version
          FROM transactions WHERE id = ?1",
         [id],
         transaction_from_row,
@@ -480,7 +486,7 @@ pub fn get_transactions(
     // Build dynamic SQL query with WHERE clauses for efficiency
     let base_sql = "SELECT id, account_id, transaction_type, amount, date, description, category_id, payee, notes,
          status, is_split, parent_transaction_id, recurring_id, transfer_account_id, transfer_pair_id,
-         imported_id, created_at, updated_at
+         imported_id, created_at, updated_at, row_version
          FROM transactions";
 
     let mut conditions: Vec<String> = Vec::new();
@@ -596,7 +602,7 @@ pub fn check_duplicate_transaction(conn: &Connection, imported_id: &str) -> DbRe
 // Category Repository
 pub fn get_all_categories(conn: &Connection) -> DbResult<Vec<Category>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at
+        "SELECT id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at, row_version
          FROM categories WHERE is_active = 1 ORDER BY is_system DESC, name",
     )?;
     let categories = stmt
@@ -608,7 +614,7 @@ pub fn get_all_categories(conn: &Connection) -> DbResult<Vec<Category>> {
 
 pub fn get_category(conn: &Connection, id: &str) -> DbResult<Category> {
     conn.query_row(
-        "SELECT id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at
+        "SELECT id, name, category_type, color, icon, parent_id, is_system, is_active, created_at, updated_at, row_version
          FROM categories WHERE id = ?1",
         [id],
         category_from_row,
@@ -686,7 +692,7 @@ pub fn create_budget(conn: &Connection, budget: &Budget) -> DbResult<()> {
 
 pub fn get_all_budgets(conn: &Connection) -> DbResult<Vec<Budget>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at
+        "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at, row_version
          FROM budgets WHERE is_active = 1 ORDER BY name",
     )?;
     let budgets = stmt
@@ -698,7 +704,7 @@ pub fn get_all_budgets(conn: &Connection) -> DbResult<Vec<Budget>> {
 
 pub fn get_budget(conn: &Connection, id: &str) -> DbResult<Budget> {
     conn.query_row(
-        "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at
+        "SELECT id, name, category_id, amount, period, start_date, end_date, rollover, is_active, created_at, updated_at, row_version
          FROM budgets WHERE id = ?1",
         [id],
         budget_from_row,
@@ -766,7 +772,7 @@ pub fn create_recurring(conn: &Connection, recurring: &RecurringTransaction) -> 
 pub fn get_all_recurring(conn: &Connection) -> DbResult<Vec<RecurringTransaction>> {
     let mut stmt = conn.prepare(
         "SELECT id, account_id, transaction_type, amount, description, category_id, payee, frequency, start_date, end_date,
-         next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at
+         next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at, row_version
          FROM recurring_transactions WHERE is_active = 1 ORDER BY next_occurrence",
     )?;
     let recurring = stmt
@@ -795,7 +801,7 @@ pub fn update_recurring_next_occurrence(
 pub fn get_recurring_by_id(conn: &Connection, id: &str) -> DbResult<RecurringTransaction> {
     conn.query_row(
         "SELECT id, account_id, transaction_type, amount, description, category_id, payee, frequency, start_date, end_date,
-         next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at
+         next_occurrence, day_of_month, day_of_week, auto_post, reminder_days, is_active, created_at, updated_at, row_version
          FROM recurring_transactions WHERE id = ?1",
         [id],
         recurring_from_row,
@@ -912,7 +918,7 @@ pub fn create_goal(conn: &Connection, goal: &SavingsGoal) -> DbResult<()> {
 
 pub fn get_all_goals(conn: &Connection) -> DbResult<Vec<SavingsGoal>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at
+        "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at, row_version
          FROM savings_goals WHERE status IN ('active', 'paused') ORDER BY name",
     )?;
     let goals = stmt
@@ -932,7 +938,7 @@ pub fn update_goal_amount(conn: &Connection, id: &str, amount: Decimal) -> DbRes
 
 pub fn get_goal(conn: &Connection, id: &str) -> DbResult<SavingsGoal> {
     conn.query_row(
-        "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at
+        "SELECT id, name, goal_type, target_amount, target_date, current_amount, account_id, color, icon, notes, status, created_at, updated_at, row_version
          FROM savings_goals WHERE id = ?1",
         [id],
         goal_from_row,

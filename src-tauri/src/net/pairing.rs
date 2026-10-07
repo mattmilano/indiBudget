@@ -190,7 +190,17 @@ fn map_db(e: rusqlite::Error) -> BoundaryError {
 ///
 /// The token is returned to the caller exactly once and only its hash is
 /// stored, so a copy of the host database yields no usable credential.
-pub fn register_device(conn: &Connection, label: &str) -> Result<(Device, String), BoundaryError> {
+///
+/// `replaces` is the token from this computer's earlier pairing, if it had
+/// one. When it still names a paired computer, that entry is given the new
+/// token in place, so pairing the same laptop again does not list it twice. A
+/// revoked entry is never revived this way: it stays in the list as revoked,
+/// and the computer is added afresh.
+pub fn register_device(
+    conn: &Connection,
+    label: &str,
+    replaces: Option<&str>,
+) -> Result<(Device, String), BoundaryError> {
     let label = label.trim();
     let label = if label.is_empty() {
         "A computer"
@@ -199,9 +209,27 @@ pub fn register_device(conn: &Connection, label: &str) -> Result<(Device, String
     };
 
     let token = generate_device_token();
-    let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
 
+    if let Some(earlier) = replaces.map(|t| device_for_token(conn, t)).transpose()?.flatten() {
+        conn.execute(
+            "UPDATE devices SET label = ?1, token_hash = ?2, paired_at = ?3 WHERE id = ?4",
+            params![label, token_hash(&token), &now, &earlier.id],
+        )
+        .map_err(map_db)?;
+        return Ok((
+            Device {
+                id: earlier.id,
+                label: label.to_string(),
+                paired_at: now,
+                last_seen_at: earlier.last_seen_at,
+                is_revoked: false,
+            },
+            token,
+        ));
+    }
+
+    let id = Uuid::new_v4().to_string();
     conn.execute(
         "INSERT INTO devices (id, label, token_hash, paired_at, last_seen_at, is_revoked)
          VALUES (?1, ?2, ?3, ?4, NULL, 0)",
@@ -445,7 +473,7 @@ mod tests {
     fn a_registered_device_can_present_its_token() {
         let db = Database::in_memory().unwrap();
         db.with_connection(|conn| {
-            let (device, token) = register_device(conn, "Alex's laptop").unwrap();
+            let (device, token) = register_device(conn, "Alex's laptop", None).unwrap();
             let found = device_for_token(conn, &token).unwrap().unwrap();
             assert_eq!(found.id, device.id);
             assert_eq!(found.label, "Alex's laptop");
@@ -459,7 +487,7 @@ mod tests {
     fn only_the_hash_of_a_token_is_stored() {
         let db = Database::in_memory().unwrap();
         db.with_connection(|conn| {
-            let (_, token) = register_device(conn, "Alex's laptop").unwrap();
+            let (_, token) = register_device(conn, "Alex's laptop", None).unwrap();
             let stored: String = conn
                 .query_row("SELECT token_hash FROM devices", [], |row| row.get(0))
                 .unwrap();
@@ -483,7 +511,7 @@ mod tests {
     fn an_unknown_token_matches_nothing() {
         let db = Database::in_memory().unwrap();
         db.with_connection(|conn| {
-            register_device(conn, "Alex's laptop").unwrap();
+            register_device(conn, "Alex's laptop", None).unwrap();
             assert!(device_for_token(conn, &generate_device_token())
                 .unwrap()
                 .is_none());
@@ -496,7 +524,7 @@ mod tests {
     fn a_revoked_device_stops_being_found_by_its_token() {
         let db = Database::in_memory().unwrap();
         db.with_connection(|conn| {
-            let (device, token) = register_device(conn, "Old laptop").unwrap();
+            let (device, token) = register_device(conn, "Old laptop", None).unwrap();
             assert!(device_for_token(conn, &token).unwrap().is_some());
 
             revoke_device(conn, &device.id).unwrap();
@@ -518,8 +546,8 @@ mod tests {
     fn revoking_one_machine_leaves_the_others_working() {
         let db = Database::in_memory().unwrap();
         db.with_connection(|conn| {
-            let (stolen, stolen_token) = register_device(conn, "Stolen laptop").unwrap();
-            let (_, kept_token) = register_device(conn, "Kitchen tablet").unwrap();
+            let (stolen, stolen_token) = register_device(conn, "Stolen laptop", None).unwrap();
+            let (_, kept_token) = register_device(conn, "Kitchen tablet", None).unwrap();
 
             revoke_device(conn, &stolen.id).unwrap();
 
@@ -528,6 +556,51 @@ mod tests {
                 device_for_token(conn, &kept_token).unwrap().is_some(),
                 "revoking one machine must not lock out the rest"
             );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pairing_the_same_computer_again_replaces_its_entry() {
+        let db = Database::in_memory().unwrap();
+        db.with_connection(|conn| {
+            let (first, old_token) = register_device(conn, "Laptop", None).unwrap();
+            let (second, new_token) = register_device(conn, "Laptop", Some(&old_token)).unwrap();
+
+            assert_eq!(second.id, first.id, "the same entry, not a second one");
+            assert_eq!(list_devices(conn).unwrap().len(), 1);
+            assert!(device_for_token(conn, &old_token).unwrap().is_none(), "the old token stops working");
+            assert!(device_for_token(conn, &new_token).unwrap().is_some());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_revoked_computer_pairing_again_is_added_afresh_not_revived() {
+        let db = Database::in_memory().unwrap();
+        db.with_connection(|conn| {
+            let (old, old_token) = register_device(conn, "Laptop", None).unwrap();
+            revoke_device(conn, &old.id).unwrap();
+
+            let (new, _) = register_device(conn, "Laptop", Some(&old_token)).unwrap();
+            assert_ne!(new.id, old.id);
+            let listed = list_devices(conn).unwrap();
+            assert_eq!(listed.len(), 2, "the revoked entry stays visible");
+            assert!(listed.iter().any(|d| d.id == old.id && d.is_revoked));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn an_unknown_replacement_token_just_adds_the_computer() {
+        let db = Database::in_memory().unwrap();
+        db.with_connection(|conn| {
+            register_device(conn, "Kitchen", None).unwrap();
+            register_device(conn, "Laptop", Some("not-a-real-token")).unwrap();
+            assert_eq!(list_devices(conn).unwrap().len(), 2);
             Ok(())
         })
         .unwrap();

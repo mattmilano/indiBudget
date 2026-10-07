@@ -97,6 +97,16 @@ impl AppState {
     }
 
     pub fn init_database(&self) -> Result<(), String> {
+        // Already open: a reloaded window asks again, and opening a second
+        // time would be refused by this window's own lock on the file.
+        if self
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some()
+        {
+            return Ok(());
+        }
         let db_path = database::get_database_path();
         let db = Database::new(db_path.clone()).map_err(|e| e.to_string())?;
 
@@ -132,7 +142,11 @@ where
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = guard.as_ref().ok_or("Database not initialized")?;
-    f(db.as_ref())
+    let result = f(db.as_ref());
+    // Host-only commands (imports, restores, settings) write outside the
+    // boundary, so they checkpoint here; free after a read.
+    db.checkpoint();
+    result
 }
 
 fn with_db<F, T>(state: &State<AppState>, f: F) -> Result<T, String>
@@ -145,7 +159,9 @@ where
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = guard.as_ref().ok_or("Database not initialized")?;
-    f(db.as_ref()).map_err(|e| e.to_string())
+    let result = f(db.as_ref()).map_err(|e| e.to_string());
+    db.checkpoint();
+    result
 }
 
 fn with_encryption<F, T>(state: &State<AppState>, f: F) -> Result<T, String>

@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::money::guard_version;
+use super::money::{guard_version, settled};
 use super::{after_delete, after_write, db_err, ok, Written};
 use crate::boundary::leases::Leasable;
 use crate::boundary::registry::{decode, BoundaryCtx, Registry};
@@ -58,7 +58,7 @@ fn h_create_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErro
         .map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::Budgets, area: Area::Planning,
         record_kind: "budget", id: &budget.id, is_new: true, leasable: Some(Leasable::Budget) })?;
-    ok(budget)
+    ok(settled(ctx, |c| repository::get_budget(c, &budget.id))?)
 }
 
 fn h_get_budgets(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryError> {
@@ -74,15 +74,14 @@ fn h_update_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryErro
     let request: UpdateBudgetRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::Budgets, "budget", &request.id)?;
     let id = request.id.clone();
-    let budget = ctx.db.with_connection(|conn| {
+    ctx.db.with_connection(|conn| {
         let mut budget = repository::get_budget(conn, &id)?;
         request.apply_to(&mut budget);
-        repository::update_budget(conn, &budget)?;
-        Ok(budget)
+        repository::update_budget(conn, &budget)
     }).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::Budgets, area: Area::Planning,
         record_kind: "budget", id: &id, is_new: false, leasable: Some(Leasable::Budget) })?;
-    ok(budget)
+    ok(settled(ctx, |c| repository::get_budget(c, &id))?)
 }
 
 fn h_delete_budget(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
@@ -104,7 +103,7 @@ fn h_create_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError>
     ctx.db.with_connection(|c| repository::create_goal(c, &goal)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::SavingsGoals, area: Area::Planning,
         record_kind: "goal", id: &goal.id, is_new: true, leasable: Some(Leasable::Goal) })?;
-    ok(goal)
+    ok(settled(ctx, |c| repository::get_goal(c, &goal.id))?)
 }
 
 fn h_get_goals(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryError> {
@@ -120,15 +119,14 @@ fn h_update_goal(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError>
     let request: UpdateGoalRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::SavingsGoals, "goal", &request.id)?;
     let id = request.id.clone();
-    let goal = ctx.db.with_connection(|conn| {
+    ctx.db.with_connection(|conn| {
         let mut goal = repository::get_goal(conn, &id)?;
         request.apply_to(&mut goal);
-        repository::update_goal(conn, &goal)?;
-        Ok(goal)
+        repository::update_goal(conn, &goal)
     }).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::SavingsGoals, area: Area::Planning,
         record_kind: "goal", id: &id, is_new: false, leasable: Some(Leasable::Goal) })?;
-    ok(goal)
+    ok(settled(ctx, |c| repository::get_goal(c, &id))?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,7 +159,7 @@ fn h_create_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryE
     ctx.db.with_connection(|c| repository::create_recurring(c, &recurring)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &recurring.id, is_new: true, leasable: None })?;
-    ok(recurring)
+    ok(settled(ctx, |c| repository::get_recurring_by_id(c, &recurring.id))?)
 }
 
 fn h_get_recurring(ctx: &BoundaryCtx, _a: Value) -> Result<Value, BoundaryError> {
@@ -177,15 +175,14 @@ fn h_update_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryE
     let request: UpdateRecurringRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::RecurringTransactions, "recurring payment", &request.id)?;
     let id = request.id.clone();
-    let recurring = ctx.db.with_connection(|conn| {
+    ctx.db.with_connection(|conn| {
         let mut recurring = repository::get_recurring_by_id(conn, &id)?;
         request.apply_to(&mut recurring);
-        repository::update_recurring(conn, &recurring)?;
-        Ok(recurring)
+        repository::update_recurring(conn, &recurring)
     }).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &id, is_new: false, leasable: None })?;
-    ok(recurring)
+    ok(settled(ctx, |c| repository::get_recurring_by_id(c, &id))?)
 }
 
 fn h_upcoming_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
@@ -202,7 +199,7 @@ fn h_create_from_detected(ctx: &BoundaryCtx, args: Value) -> Result<Value, Bound
     let created = ops::ops_create_recurring_from_detected(ctx.db, detected).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &created.id, is_new: true, leasable: None })?;
-    ok(created)
+    ok(settled(ctx, |c| repository::get_recurring_by_id(c, &created.id))?)
 }
 
 #[derive(Debug, Deserialize)]

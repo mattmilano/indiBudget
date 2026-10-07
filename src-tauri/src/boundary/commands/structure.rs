@@ -7,7 +7,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::money::guard_version;
+use super::money::{guard_version, settled};
 use super::{after_delete, after_write, db_err, ok, Written};
 use crate::boundary::leases::Leasable;
 use crate::boundary::registry::{decode, BoundaryCtx, Registry};
@@ -40,22 +40,21 @@ fn h_create_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryEr
     ctx.db.with_connection(|c| repository::create_category(c, &category)).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::Categories, area: Area::Structure,
         record_kind: "category", id: &category.id, is_new: true, leasable: Some(Leasable::Category) })?;
-    ok(category)
+    ok(settled(ctx, |c| repository::get_category(c, &category.id))?)
 }
 
 fn h_update_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {
     let request: UpdateCategoryRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::Categories, "category", &request.id)?;
     let id = request.id.clone();
-    let category = ctx.db.with_connection(|conn| {
+    ctx.db.with_connection(|conn| {
         let mut category = repository::get_category(conn, &id)?;
         request.apply_to(&mut category);
-        repository::update_category(conn, &category)?;
-        Ok(category)
+        repository::update_category(conn, &category)
     }).map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::Categories, area: Area::Structure,
         record_kind: "category", id: &id, is_new: false, leasable: Some(Leasable::Category) })?;
-    ok(category)
+    ok(settled(ctx, |c| repository::get_category(c, &id))?)
 }
 
 fn h_delete_category(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryError> {

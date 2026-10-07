@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useTransactionsStore, useCategoriesStore } from '../stores';
 import type { Account, Transaction, TransactionStatus } from '../types';
 import * as api from '../services/api';
+import { BoundaryError } from '../lib/rpc';
+import { isDeletedRefusal } from '../composables/useSaveConflict';
 
 interface Props {
   show: boolean;
@@ -23,6 +25,12 @@ const statementBalance = ref('');
 const statementDate = ref('');
 const saving = ref(false);
 const localStatuses = ref<Record<string, TransactionStatus>>({});
+/**
+ * Why the last attempt stopped part-way, shown in the modal. The ticks the
+ * person made are kept, so after reloading they can simply finish again.
+ */
+const refusal = ref<string | null>(null);
+const reloading = ref(false);
 
 // Initialize statement date to today
 onMounted(() => {
@@ -115,21 +123,25 @@ async function handleReconcile() {
   }
 
   saving.value = true;
+  refusal.value = null;
   try {
-    // Update all cleared transactions to reconciled
-    for (const tx of accountTransactions.value) {
+    // Each save carries the version this list was read at. Transactions take
+    // no edit hold, so this is what stops a tick here quietly undoing an edit
+    // someone else made to the same transaction since the list was loaded.
+    // Snapshot first: the loop must not chase a list that changes under it.
+    for (const tx of [...accountTransactions.value]) {
       const status = localStatuses.value[tx.id] || tx.status;
       if (status === 'cleared') {
         await api.updateTransaction({
           id: tx.id,
           status: 'reconciled',
-        });
+        }, tx.row_version);
       } else if (localStatuses.value[tx.id] && localStatuses.value[tx.id] !== tx.status) {
         // Also update any status changes we made
         await api.updateTransaction({
           id: tx.id,
           status: localStatuses.value[tx.id],
-        });
+        }, tx.row_version);
       }
     }
 
@@ -137,14 +149,36 @@ async function handleReconcile() {
     emit('complete');
   } catch (e) {
     console.error('Failed to reconcile:', e);
-    alert('Failed to reconcile transactions.');
+    if (e instanceof BoundaryError && (e.isStale || isDeletedRefusal(e))) {
+      // Stay open with the ticks intact. Anything already saved is saved;
+      // the refusal names the transaction that moved.
+      refusal.value =
+        `${e.message} Reconciliation stopped there. Reload the transactions to see the change, ` +
+        'then finish again: your ticks are kept, and anything already reconciled stays reconciled.';
+    } else if (e instanceof BoundaryError) {
+      refusal.value = e.message;
+    } else {
+      alert('Failed to reconcile transactions.');
+    }
   } finally {
     saving.value = false;
   }
 }
 
+/** Re-read the transactions so the next attempt works from their latest versions. */
+async function reloadTransactions() {
+  reloading.value = true;
+  try {
+    await transactionsStore.fetchTransactions({});
+    refusal.value = null;
+  } finally {
+    reloading.value = false;
+  }
+}
+
 function handleClose() {
   localStatuses.value = {};
+  refusal.value = null;
   emit('close');
 }
 
@@ -350,6 +384,21 @@ watch(() => props.show, (newVal) => {
 
             <!-- Footer -->
             <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700 shrink-0">
+              <div
+                v-if="refusal"
+                role="alert"
+                class="mb-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-sm space-y-2"
+              >
+                <p>{{ refusal }}</p>
+                <button
+                  type="button"
+                  :disabled="reloading"
+                  class="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                  @click="reloadTransactions"
+                >
+                  {{ reloading ? 'Loading…' : 'Reload transactions' }}
+                </button>
+              </div>
               <div class="flex justify-between items-center">
                 <p class="text-sm text-gray-500 dark:text-gray-400">
                   Click transactions to mark them as cleared

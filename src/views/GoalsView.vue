@@ -4,6 +4,10 @@ import * as api from '../services/api';
 import type { SavingsGoal, CreateGoalRequest, GoalType } from '../types';
 import { differenceInDays, parseISO } from 'date-fns';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import EditHoldNotice from '../components/EditHoldNotice.vue';
+import SaveRefusalNotice from '../components/SaveRefusalNotice.vue';
+import { useLease } from '../composables/useLease';
+import { useSaveConflict } from '../composables/useSaveConflict';
 
 const goals = ref<SavingsGoal[]>([]);
 const showAddModal = ref(false);
@@ -139,17 +143,24 @@ async function handleContribution() {
 
   contributing.value = true;
   try {
-    await api.updateGoalProgress(selectedGoal.value.id, contributionAmount.value);
-    // Update local state
-    const goalIndex = goals.value.findIndex(g => g.id === selectedGoal.value!.id);
+    const goalId = selectedGoal.value.id;
+    const currentAmount = parseFloat(selectedGoal.value.current_amount) || 0;
+    const addedAmount = parseFloat(contributionAmount.value) || 0;
+    // `update_goal_progress` sets the saved amount rather than adding to it,
+    // so it is sent the new total. Sending only the contribution replaced
+    // everything saved so far with the latest payment.
+    await api.updateGoalProgress(goalId, (currentAmount + addedAmount).toFixed(2));
+
+    // Re-read rather than patch: the write moved the goal's version on, and an
+    // edit opened from a stale copy would be refused as someone else's change.
+    const fresh = await api.getGoal(goalId);
+    const goalIndex = goals.value.findIndex(g => g.id === goalId);
     if (goalIndex !== -1) {
-      const currentAmount = parseFloat(goals.value[goalIndex].current_amount) || 0;
-      const addedAmount = parseFloat(contributionAmount.value) || 0;
-      goals.value[goalIndex].current_amount = (currentAmount + addedAmount).toString();
+      goals.value[goalIndex] = fresh;
 
       // Check if goal is completed
-      const targetAmount = parseFloat(goals.value[goalIndex].target_amount) || 0;
-      if (currentAmount + addedAmount >= targetAmount) {
+      const targetAmount = parseFloat(fresh.target_amount) || 0;
+      if ((parseFloat(fresh.current_amount) || 0) >= targetAmount) {
         goals.value[goalIndex].status = 'completed';
       }
     }
@@ -163,7 +174,41 @@ async function handleContribution() {
   }
 }
 
-function openEditModal(goal: SavingsGoal) {
+/**
+ * The version the edit form started from, and what to do if a save is refused
+ * because someone else saved first.
+ */
+const conflict = useSaveConflict<SavingsGoal>({
+  label: 'goal',
+  versionOf: (g) => g.row_version,
+  fetchLatest: async () => {
+    const id = selectedGoal.value?.id;
+    if (!id) return undefined;
+    await fetchGoals();
+    return goals.value.find(g => g.id === id);
+  },
+  loadIntoForm: fillEditForm,
+});
+
+/**
+ * The edit hold. Taken while the edit dialog is open on a goal — never for a
+ * new one, nor for a contribution — and handed back when it closes. On a single
+ * computer it is always granted, so nothing here changes for someone using
+ * indiBudget alone.
+ */
+const lease = useLease('goal', () => (showEditModal.value ? selectedGoal.value?.id : null), {
+  // Refused as the form opened means it was locked before anything was typed,
+  // so it may be showing what the other person has since changed.
+  onRegained: (_id, refusedAt) => {
+    if (refusedAt === 'acquire') void conflict.loadLatest();
+  },
+});
+
+/** Locked until the hold is confirmed, so nobody types into a form they cannot save. */
+const editLocked = computed(() => !lease.held.value);
+const savingEdit = ref(false);
+
+function fillEditForm(goal: SavingsGoal) {
   selectedGoal.value = goal;
   editGoal.value = {
     id: goal.id,
@@ -175,12 +220,18 @@ function openEditModal(goal: SavingsGoal) {
     color: goal.color ?? '#3b82f6',
     notes: goal.notes,
   };
+}
+
+function openEditModal(goal: SavingsGoal) {
+  fillEditForm(goal);
+  conflict.begin(goal);
   showEditModal.value = true;
 }
 
 async function handleEditSubmit() {
-  if (!selectedGoal.value) return;
+  if (!selectedGoal.value || editLocked.value) return;
 
+  savingEdit.value = true;
   try {
     const updatedGoal = await api.updateGoal({
       id: editGoal.value.id,
@@ -191,7 +242,7 @@ async function handleEditSubmit() {
       target_date: editGoal.value.target_date,
       color: editGoal.value.color,
       notes: editGoal.value.notes,
-    });
+    }, conflict.version.value);
     const goalIndex = goals.value.findIndex(g => g.id === editGoal.value.id);
     if (goalIndex !== -1) {
       goals.value[goalIndex] = updatedGoal;
@@ -199,8 +250,11 @@ async function handleEditSubmit() {
     showEditModal.value = false;
     selectedGoal.value = null;
   } catch (e) {
+    // The dialog stays open with everything typed; the refusal says why.
     console.error('Failed to update goal:', e);
-    alert('Failed to update goal. Please try again.');
+    conflict.refused(e);
+  } finally {
+    savingEdit.value = false;
   }
 }
 
@@ -644,6 +698,21 @@ onMounted(fetchGoals);
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Edit Goal</h3>
         </div>
         <form @submit.prevent="handleEditSubmit" class="p-4 space-y-4">
+          <EditHoldNotice
+            :message="lease.message.value"
+            :held-by="lease.heldBy.value"
+            :pending="lease.pending.value"
+            @retry="lease.retry()"
+          />
+          <SaveRefusalNotice
+            :sentence="conflict.sentence.value"
+            :kind="conflict.kind.value"
+            :note="conflict.note.value"
+            :reloading="conflict.reloading.value"
+            @load-latest="conflict.loadLatest()"
+            @keep-mine="conflict.keepMine()"
+          />
+          <fieldset :disabled="editLocked" :class="['space-y-4 min-w-0', { 'opacity-60': editLocked }]">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Goal Name</label>
             <input
@@ -712,6 +781,7 @@ onMounted(fetchGoals);
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>
+          </fieldset>
           <div class="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -722,7 +792,8 @@ onMounted(fetchGoals);
             </button>
             <button
               type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              :disabled="editLocked || savingEdit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>

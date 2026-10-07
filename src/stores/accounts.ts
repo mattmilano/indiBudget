@@ -55,11 +55,19 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
-  async function updateAccount(request: Partial<Account> & { id: string }) {
+  /**
+   * Save an edit. `expectedRowVersion` is the version the form opened with; if
+   * the account has moved on since, the save is refused and thrown to the
+   * caller, which keeps the form open rather than overwriting the other change.
+   */
+  async function updateAccount(
+    request: Partial<Account> & { id: string },
+    expectedRowVersion?: number
+  ) {
     loading.value = true;
     error.value = null;
     try {
-      const updated = await api.updateAccount(request);
+      const updated = await api.updateAccount(request, expectedRowVersion);
       const index = accounts.value.findIndex(a => a.id === updated.id);
       if (index !== -1) {
         accounts.value[index] = updated;

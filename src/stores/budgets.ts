@@ -69,11 +69,16 @@ export const useBudgetsStore = defineStore('budgets', () => {
     }
   }
 
-  async function updateBudget(request: UpdateBudgetPayload) {
+  /**
+   * Save an edit. `expectedRowVersion` is the version the form opened with; if
+   * the budget has moved on since, the save is refused and thrown to the
+   * caller, which keeps the form open rather than overwriting the other change.
+   */
+  async function updateBudget(request: UpdateBudgetPayload, expectedRowVersion?: number) {
     loading.value = true;
     error.value = null;
     try {
-      const budget = await api.updateBudget(request);
+      const budget = await api.updateBudget(request, expectedRowVersion);
       const index = budgets.value.findIndex(b => b.id === budget.id);
       if (index !== -1) {
         budgets.value[index] = budget;

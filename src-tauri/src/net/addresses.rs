@@ -53,12 +53,17 @@ pub fn usable_addresses(interfaces: impl IntoIterator<Item = (String, IpAddr)>) 
     out
 }
 
-/// This machine's addresses on the network, with the port, ready to show.
-pub fn reachable_addresses(port: u16) -> Vec<String> {
+/// This machine's addresses on the network.
+pub fn reachable_ips() -> Vec<Ipv4Addr> {
     let interfaces = if_addrs::get_if_addrs()
         .map(|list| list.into_iter().map(|i| (i.name.clone(), i.ip())).collect::<Vec<_>>())
         .unwrap_or_default();
     usable_addresses(interfaces)
+}
+
+/// This machine's addresses on the network, with the port, ready to show.
+pub fn reachable_addresses(port: u16) -> Vec<String> {
+    reachable_ips()
         .into_iter()
         .map(|ip| format!("{ip}:{port}"))
         .collect()

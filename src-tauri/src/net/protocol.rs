@@ -12,7 +12,17 @@ use crate::boundary::{Request, Response};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Offer a pairing proof and ask to be added as a known machine.
-    Pair { proof: String, label: String },
+    ///
+    /// `replaces` is the token this computer was given the last time it paired
+    /// with this host, so pairing again swaps that entry rather than listing
+    /// the computer twice. By token, never by name: two laptops in one house
+    /// can easily share a name.
+    Pair {
+        proof: String,
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replaces: Option<String>,
+    },
     /// Present the machine's token and a person's credentials.
     Authenticate {
         device_token: String,
@@ -71,6 +81,12 @@ mod tests {
             ClientMessage::Pair {
                 proof: "abc123".into(),
                 label: "Alex's laptop".into(),
+                replaces: None,
+            },
+            ClientMessage::Pair {
+                proof: "abc123".into(),
+                label: "Alex's laptop".into(),
+                replaces: Some("old-token".into()),
             },
             ClientMessage::Authenticate {
                 device_token: "token".into(),

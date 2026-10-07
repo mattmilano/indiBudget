@@ -29,6 +29,24 @@ export interface HostingStatus {
   lost: boolean;
   /** Why, in a sentence: the host went away, or ended this person's session. */
   lost_reason: string | null;
+  /** While hosting: who is signed in from other computers right now. */
+  connected_people: Seat[];
+}
+
+/** Someone signed in from another computer. */
+export interface Seat {
+  person: string;
+  computer: string;
+  connected_at: string;
+  last_active_at: string;
+}
+
+/** A computer heard announcing a budget on this network. */
+export interface FoundHost {
+  computer: string;
+  address: string;
+  /** A hint for the screen only; pairing proves which computer it is. */
+  fingerprint_groups: string;
 }
 
 export interface SavedHost {
@@ -75,6 +93,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     saved_host: null,
     lost: false,
     lost_reason: null,
+    connected_people: [],
   });
 
   const pairingCode = ref<string | null>(null);
@@ -110,6 +129,11 @@ export const useMultiUserStore = defineStore('multiuser', () => {
   async function refreshStatus() {
     status.value = await invokeLocal<HostingStatus>('hosting_status');
     setConnectedToHost(status.value.connected);
+  }
+
+  /** Listen for a couple of seconds for computers hosting a budget nearby. */
+  async function discoverHosts() {
+    return invokeLocal<FoundHost[]>('discover_hosts');
   }
 
   async function startHosting(port?: number) {
@@ -262,6 +286,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
   }
 
   return {
+    discoverHosts,
     status,
     pairingCode,
     maintenanceClosedBy,

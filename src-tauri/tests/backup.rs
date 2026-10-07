@@ -110,3 +110,41 @@ fn version_mismatch_backup_is_rejected() {
     );
     assert_eq!(all_transactions(&dst).len(), before, "no rows imported on rejected backup");
 }
+
+/// Backups written before records carried `row_version` have no such field.
+/// They must restore exactly as before, each row starting again at version 1.
+#[test]
+fn a_backup_from_before_row_versions_still_restores() {
+    let src = db();
+    let groceries = new_category(&src, "Groceries", CategoryType::Expense, "#00aa00");
+    let checking = new_account(&src, "Checking", AccountType::Checking, "1500.00");
+    add_expense(&src, &checking, "85.40", "2026-06-03", "Market", Some(&groceries));
+
+    let path = temp_file("backup.json");
+    export_backup_to_file(&src, &path).expect("export");
+
+    // Strip the field from every record, as an older version would have
+    // written it.
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut stripped = 0;
+    for section in ["accounts", "transactions", "categories", "budgets", "recurring", "goals"] {
+        for record in raw[section].as_array_mut().unwrap() {
+            if record.as_object_mut().unwrap().remove("row_version").is_some() {
+                stripped += 1;
+            }
+        }
+    }
+    assert!(stripped > 0, "the export should have carried row_version to strip");
+    std::fs::write(&path, serde_json::to_string(&raw).unwrap()).unwrap();
+
+    let dst = db();
+    import_backup_from_file(&dst, &path).expect("an older backup should still import");
+
+    let restored = dst
+        .with_connection(|conn| indibudget_lib::database::repository::get_account(conn, &checking))
+        .expect("account restored");
+    assert_eq!(restored.balance, dec("1414.60"));
+    assert!(restored.row_version >= 1);
+    assert_eq!(all_transactions(&dst).len(), 1);
+}
