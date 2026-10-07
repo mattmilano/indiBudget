@@ -44,7 +44,17 @@ pub struct HostState {
     pairing: Mutex<Option<PairingWindow>>,
     throttle: Throttle,
     seats: Seats,
+    /// Unused watch tickets, each opening one nudge connection for a seat.
+    tickets: Mutex<HashMap<String, u64>>,
+    /// Set when hosting stops, so nudge connections asleep on the news log
+    /// end at once rather than at their next scheduled nudge.
+    stopping: AtomicBool,
 }
+
+/// How often a nudge connection hears from the host when nothing has
+/// changed. Comfortably inside the joining computer's read timeout, so a quiet
+/// budget is never mistaken for a host that has gone.
+pub const NUDGE_EVERY: Duration = Duration::from_secs(25);
 
 /// Someone signed in from another computer, as the Sharing screen lists them.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -97,6 +107,10 @@ impl Seats {
     }
 
     /// Give up a seat. Answers whether that person still has another.
+    fn contains(&self, id: u64) -> bool {
+        self.lock().contains_key(&id)
+    }
+
     fn leave(&self, id: u64) -> bool {
         let mut held = self.lock();
         match held.remove(&id) {
@@ -127,7 +141,32 @@ impl HostState {
             pairing: Mutex::new(None),
             throttle: Throttle::new(),
             seats: Seats::default(),
+            tickets: Mutex::new(HashMap::new()),
+            stopping: AtomicBool::new(false),
         }
+    }
+
+    fn lock_tickets(&self) -> std::sync::MutexGuard<'_, HashMap<String, u64>> {
+        self.tickets.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn issue_ticket(&self, seat: u64) -> String {
+        let ticket = super::pairing::generate_device_token();
+        self.lock_tickets().insert(ticket.clone(), seat);
+        ticket
+    }
+
+    /// Spend a ticket: it opens one nudge connection, and only while its
+    /// session is still signed in.
+    fn redeem_ticket(&self, ticket: &str) -> Option<u64> {
+        let seat = self.lock_tickets().remove(ticket)?;
+        self.seats.contains(seat).then_some(seat)
+    }
+
+    /// End every nudge connection now. Called when hosting stops.
+    pub fn stop_nudging(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
+        self.shared.news.wake();
     }
 
     /// Open a pairing window and return the code to show on screen.
@@ -306,9 +345,20 @@ impl HostState {
     /// A connection is finished with: give up its seat, and let go of what the
     /// person held unless they are still here on another computer.
     fn leave(&self, session: &Session) {
-        if !self.seats.leave(session.seat) {
+        let still_here = self.end_seat(session);
+        if !still_here {
             self.release_holds_of(&session.actor);
         }
+    }
+
+    /// Give up a session's seat and its unused ticket, and rouse its nudge
+    /// connection so that ends too. Answers whether the person is still here
+    /// on another computer.
+    fn end_seat(&self, session: &Session) -> bool {
+        self.lock_tickets().retain(|_, seat| *seat != session.seat);
+        let still_here = self.seats.leave(session.seat);
+        self.shared.news.wake();
+        still_here
     }
 
     fn release_holds_of(&self, actor: &Actor) {
@@ -328,6 +378,7 @@ pub struct RunningHost {
     shutdown: Arc<AtomicBool>,
     accept_thread: Option<JoinHandle<()>>,
     live: Arc<LiveConnections>,
+    state: Arc<HostState>,
 }
 
 /// Every connection currently being served, so stopping can end them.
@@ -373,6 +424,7 @@ impl RunningHost {
 
     pub fn stop(&mut self) {
         self.shutdown.store(true, Ordering::SeqCst);
+        self.state.stop_nudging();
 
         // Unblock the accept() by connecting to ourselves once. The listener is
         // bound to 0.0.0.0, which Windows refuses as a destination — dialling
@@ -432,6 +484,7 @@ pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, Bou
     let live = Arc::new(LiveConnections::default());
     let accept_live = Arc::clone(&live);
 
+    let kept_state = Arc::clone(&state);
     let accept_thread = std::thread::spawn(move || {
         for incoming in listener.incoming() {
             if accept_shutdown.load(Ordering::SeqCst) {
@@ -456,6 +509,7 @@ pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, Bou
         shutdown,
         accept_thread: Some(accept_thread),
         live,
+        state: kept_state,
     })
 }
 
@@ -474,6 +528,21 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
         };
 
         let reply = match serde_json::from_str::<ClientMessage>(&raw) {
+            Ok(ClientMessage::Watch { ticket }) if session.is_none() => {
+                match state.redeem_ticket(&ticket) {
+                    Some(seat) => {
+                        // From here on this connection only carries nudges.
+                        watch(&state, &mut tls, seat);
+                        return;
+                    }
+                    None => ServerMessage::refused(
+                        "That session has ended. Sign in again to hear about changes.",
+                    ),
+                }
+            }
+            Ok(ClientMessage::Watch { .. }) => {
+                ServerMessage::refused("This connection is already signed in.")
+            }
             Ok(message) => handle_message(&state, &mut session, message),
             Err(e) => ServerMessage::refused(format!("That message could not be read: {e}")),
         };
@@ -491,6 +560,36 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
     // this clears it now.
     if let Some(session) = session.as_ref() {
         state.leave(session);
+    }
+}
+
+/// Serve a nudge connection: say "something changed, up to here" whenever
+/// the news log moves, and say the same at least every [`NUDGE_EVERY`] so the
+/// other end can tell a quiet budget from a host that has gone.
+///
+/// Ends when its seat does — sign-out, access removed, computer revoked — or
+/// when hosting stops.
+fn watch<S: std::io::Read + std::io::Write>(state: &HostState, stream: &mut S, seat: u64) {
+    let send = |stream: &mut S, message: &ServerMessage| {
+        serde_json::to_string(message)
+            .ok()
+            .is_some_and(|encoded| write_frame(stream, &encoded).is_ok())
+    };
+    if !send(stream, &ServerMessage::Watching) {
+        return;
+    }
+
+    // Start from the present, with a first nudge so anything that happened
+    // between signing in and this connection opening is caught up on.
+    let mut mark = state.shared.news.current_mark();
+    loop {
+        if state.stopping.load(Ordering::SeqCst) || !state.seats.contains(seat) {
+            return;
+        }
+        if !send(stream, &ServerMessage::Nudge { mark: mark.clone() }) {
+            return;
+        }
+        mark = state.shared.news.wait_past(mark.seq, NUDGE_EVERY);
     }
 }
 
@@ -513,10 +612,6 @@ fn handle_message(
             password,
         } => match state.judge_sign_in(&device_token, &login, &password) {
             Ok((signed_in, device)) => {
-                let reply = ServerMessage::Authenticated {
-                    display_name: signed_in.display_name.clone(),
-                    is_owner: signed_in.is_owner,
-                };
                 // Signing in again on the same connection gives up the old seat.
                 if let Some(previous) = session.take() {
                     state.leave(&previous);
@@ -524,6 +619,11 @@ fn handle_message(
                 let seat = state
                     .seats
                     .take(&signed_in.user_id, &signed_in.display_name, &device.label);
+                let reply = ServerMessage::Authenticated {
+                    display_name: signed_in.display_name.clone(),
+                    is_owner: signed_in.is_owner,
+                    watch_ticket: Some(state.issue_ticket(seat)),
+                };
                 *session = Some(Session {
                     user_id: signed_in.user_id.clone(),
                     device_id: device.id,
@@ -534,6 +634,9 @@ fn handle_message(
             }
             Err(refusal) => refusal,
         },
+
+        // Answered in `serve_connection`, which owns the stream it takes over.
+        ClientMessage::Watch { .. } => ServerMessage::refused("That cannot be asked here."),
 
         ClientMessage::Invoke { request } => {
             let Some(current) = session.as_mut() else {
@@ -550,7 +653,7 @@ fn handle_message(
                     // Off the list at once, and everything they held let go:
                     // their other computers are refused on their next click too.
                     let ended = session.take().expect("checked above");
-                    state.seats.leave(ended.seat);
+                    state.end_seat(&ended);
                     state.release_holds_of(&ended.actor);
                     return ServerMessage::refused(why);
                 }

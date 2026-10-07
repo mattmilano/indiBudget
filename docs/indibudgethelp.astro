@@ -515,7 +515,8 @@ import Icon from '@components/Icon.astro';
         <p>Underneath the holds, every save checks that what you were editing has not changed since you opened it. If it has, your save is refused with everything you typed left in place, so you can look at the latest version and decide — nothing is overwritten quietly.</p>
 
         <h3>Seeing Each Other's Changes</h3>
-        <p>Screens check for changes every few seconds, so a transaction someone else adds appears without anyone pressing refresh. If the host is restarted, connected computers notice and reload rather than showing stale figures.</p>
+        <p>When someone changes something, the host tells every connected computer straight away, so a transaction someone else adds appears almost as soon as they save it, without anyone pressing refresh. The host's own window is told the same way.</p>
+        <p>Screens also check for changes every few seconds on their own, so even on a network that drops that message, nothing is missed for long. If the host is restarted, connected computers notice and reload rather than showing stale figures.</p>
 
         <h3>Pausing Everyone (Maintenance)</h3>
         <p>An administrator can <strong>close the budget for maintenance</strong> from the Sharing screen — useful before taking a backup, so nothing changes underneath it.</p>

@@ -28,8 +28,9 @@ across the home network — no cloud service is involved at any point.
   address (typing it still works where the network does not pass the
   announcements on)
 - A list of who is connected right now, by person and computer
-- Live updates, so a change made on one computer appears on the others within
-  seconds
+- Live updates: the host tells every connected computer the moment something
+  changes, so it appears on the others almost at once. A five-second check
+  runs underneath in case that message is lost
 - Edit protection on budgets, accounts, categories and goals: opening one
   someone else is editing says so by name, before the typing rather than after
   the save. Transactions deliberately take no hold, so two people can log the

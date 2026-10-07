@@ -6,6 +6,7 @@ pub mod net;
 pub mod services;
 
 use commands::AppState;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +18,18 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(AppState::new())
+        .setup(|app| {
+            // A nudge from the host (or, while hosting, from the news log) tells
+            // the window to catch up now instead of at its next beat. Only the
+            // mark travels; the window asks what changed in the usual way.
+            let handle = app.handle().clone();
+            app.state::<AppState>()
+                .multi_user
+                .set_on_nudge(std::sync::Arc::new(move |mark| {
+                    let _ = handle.emit("news-nudge", mark);
+                }));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Initialization
             // Multi-user: hosting and connecting. Local-only by design — none

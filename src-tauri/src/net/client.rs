@@ -12,6 +12,7 @@ use super::frame::{read_frame, write_frame, FrameError};
 use super::identity::{Fingerprint, PinnedServerCertVerifier};
 use super::pairing::pairing_proof;
 use super::protocol::{ClientMessage, ServerMessage};
+use crate::boundary::news::Mark;
 use crate::boundary::{BoundaryError, Request, Response};
 
 /// How long to wait for the host to accept a connection.
@@ -339,9 +340,11 @@ impl Client {
             ServerMessage::Authenticated {
                 display_name,
                 is_owner,
+                watch_ticket,
             } => Ok(SignedIn {
                 display_name,
                 is_owner,
+                watch_ticket,
             }),
             ServerMessage::Refused {
                 sentence,
@@ -378,4 +381,100 @@ impl Client {
 pub struct SignedIn {
     pub display_name: String,
     pub is_owner: bool,
+    /// Opens one nudge connection; see [`Watcher`]. Absent from a host too old
+    /// to push, which leaves the five-second beat to do the work alone.
+    pub watch_ticket: Option<String>,
+}
+
+/// How long the nudge connection waits to hear anything before deciding the
+/// host has gone. Well past the host's own [`super::host::NUDGE_EVERY`].
+pub const WATCH_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Something to call when the host says the budget changed.
+pub type OnNudge = Arc<dyn Fn(&Mark) + Send + Sync>;
+
+/// A second connection to the host on which it says, unasked, that something
+/// changed — so a transaction added on the laptop shows on the desktop at once
+/// rather than at the next five-second beat.
+///
+/// Kept apart from [`Client`] because that connection is strict request/reply:
+/// a nudge arriving on it could be read as the answer to a request. The nudge
+/// carries only a mark; what changed is asked for through the ordinary
+/// catch-up, which filters it by what this person may see.
+///
+/// Nothing depends on this working. If it fails or drops, the beat still
+/// catches everything up, a few seconds later.
+pub struct Watcher {
+    socket: TcpStream,
+    thread: Option<std::thread::JoinHandle<()>>,
+    running: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Watcher {
+    /// Open the nudge connection with a ticket from sign-in, and start
+    /// listening on a thread of its own.
+    pub fn start(
+        addr: SocketAddr,
+        expected: Fingerprint,
+        ticket: &str,
+        on_nudge: OnNudge,
+    ) -> Result<Self, BoundaryError> {
+        let mut client = Client::connect(addr, expected)?;
+        match client.exchange(ClientMessage::Watch {
+            ticket: ticket.to_string(),
+        })? {
+            ServerMessage::Watching => {}
+            ServerMessage::Refused { sentence, .. } => return Err(BoundaryError::invalid(sentence)),
+            other => {
+                return Err(BoundaryError::internal(format!(
+                    "Unexpected reply while asking to hear about changes: {other:?}"
+                )))
+            }
+        }
+
+        let mut tls = client.tls;
+        let socket = tls
+            .sock
+            .try_clone()
+            .map_err(|e| BoundaryError::internal(format!("Could not keep the connection: {e}")))?;
+        let _ = tls.sock.set_read_timeout(Some(WATCH_TIMEOUT));
+
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let still = Arc::clone(&running);
+        let thread = std::thread::spawn(move || {
+            let mut last: Option<Mark> = None;
+            // Ends when the host goes quiet for too long, closes the
+            // connection, or this side shuts the socket.
+            while let Ok(raw) = read_frame(&mut tls) {
+                let Ok(ServerMessage::Nudge { mark }) = serde_json::from_str(&raw) else {
+                    break;
+                };
+                if last.as_ref() != Some(&mark) {
+                    on_nudge(&mark);
+                    last = Some(mark);
+                }
+            }
+            still.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        Ok(Watcher {
+            socket,
+            thread: Some(thread),
+            running,
+        })
+    }
+
+    /// Whether the host is still sending nudges.
+    pub fn is_running(&self) -> bool {
+        self.running.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for Watcher {
+    fn drop(&mut self) {
+        let _ = self.socket.shutdown(std::net::Shutdown::Both);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }

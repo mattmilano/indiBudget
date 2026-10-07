@@ -24,10 +24,12 @@ use crate::boundary::registry::{dispatch, BoundaryCtx};
 use crate::boundary::{Actor, BoundaryError, Request, Response};
 use crate::database::repository;
 use crate::net::addresses::{parse_host_address, reachable_addresses, DEFAULT_PORT};
-use crate::net::client::Client;
+use crate::net::client::{Client, OnNudge, Watcher};
 use crate::net::credentials;
 use crate::net::discovery::{self, Advertisement, FoundHost};
-use crate::net::host::{self, HostState, RunningHost, Seat};
+use crate::net::host::{self, HostState, RunningHost, Seat, NUDGE_EVERY};
+use crate::boundary::SharedState;
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::net::identity::{Fingerprint, HostIdentity};
 
 /// The settings key under which a joining computer remembers its host.
@@ -50,11 +52,69 @@ pub struct MultiUser {
     /// The announcement that lets joining computers find this one, while
     /// hosting. Absent when the network would not carry it.
     advert: Mutex<Option<Advertisement>>,
+    /// The nudge connection to the host this computer is signed in to.
+    watcher: Mutex<Option<Watcher>>,
+    /// While hosting: passes changes made from other computers on to this
+    /// computer's own window, which has no connection to be nudged on.
+    relay: Mutex<Option<Relay>>,
+    /// What a nudge does here — in the app, tell the window to catch up now.
+    on_nudge: Mutex<Option<OnNudge>>,
 }
 
 impl MultiUser {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Say what to do when the budget changes somewhere else. Without this,
+    /// screens still catch up on their five-second beat.
+    pub fn set_on_nudge(&self, on_nudge: OnNudge) {
+        *lock(&self.on_nudge) = Some(on_nudge);
+    }
+
+    fn on_nudge(&self) -> Option<OnNudge> {
+        lock(&self.on_nudge).clone()
+    }
+}
+
+/// Watches the news log on the hosting computer and nudges its own window.
+struct Relay {
+    shared: Arc<SharedState>,
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Relay {
+    fn start(shared: Arc<SharedState>, on_nudge: OnNudge) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = {
+            let (shared, stop) = (Arc::clone(&shared), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                let mut seen = shared.news.current_mark().seq;
+                while !stop.load(Ordering::SeqCst) {
+                    let mark = shared.news.wait_past(seen, NUDGE_EVERY);
+                    if mark.seq != seen && !stop.load(Ordering::SeqCst) {
+                        on_nudge(&mark);
+                    }
+                    seen = mark.seq;
+                }
+            })
+        };
+        Relay {
+            shared,
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for Relay {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.shared.news.wake();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -281,6 +341,10 @@ pub fn start_hosting_on(state: &AppState, port: Option<u16>) -> Result<HostingSt
     *lock(&state.multi_user.running) = Some(running);
     *lock(&state.multi_user.state) = Some(host_state);
     *lock(&state.multi_user.advert) = advert;
+    *lock(&state.multi_user.relay) = state
+        .multi_user
+        .on_nudge()
+        .map(|on_nudge| Relay::start(Arc::clone(&state.shared), on_nudge));
     Ok(status_of(state))
 }
 
@@ -293,6 +357,8 @@ pub fn stop_hosting_on(state: &AppState) -> HostingStatus {
     // Withdrawn first, so nobody picks this computer from a list as it stops.
     let advert = lock(&state.multi_user.advert).take();
     drop(advert);
+    let relay = lock(&state.multi_user.relay).take();
+    drop(relay);
     let running = lock(&state.multi_user.running).take();
     if let Some(mut running) = running {
         // Also disconnects every computer that had joined.
@@ -440,6 +506,13 @@ pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingSt
         .sign_in(&token, &request.login, &request.password)
         .map_err(|e| e.sentence())?;
 
+    // Best effort: without it, changes still arrive on the five-second beat.
+    let watcher = session
+        .watch_ticket
+        .as_deref()
+        .zip(state.multi_user.on_nudge())
+        .and_then(|(ticket, on_nudge)| Watcher::start(addr, fingerprint, ticket, on_nudge).ok());
+
     saved.last_login = Some(request.login.trim().to_string());
     // A host remembered before the keychain was used moves its token there now.
     if saved.device_token.is_some() {
@@ -448,6 +521,7 @@ pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingSt
     store_saved_host(state, &saved)?;
 
     *lock(&state.multi_user.client) = Some(client);
+    *lock(&state.multi_user.watcher) = watcher;
     *lock(&state.multi_user.connected_as) = Some(session.display_name);
     *lock(&state.multi_user.lost) = None;
     Ok(status_of(state))
@@ -462,6 +536,8 @@ pub async fn connect_to_host(
 }
 
 pub fn disconnect_on(state: &AppState) -> HostingStatus {
+    let watcher = lock(&state.multi_user.watcher).take();
+    drop(watcher);
     *lock(&state.multi_user.client) = None;
     *lock(&state.multi_user.connected_as) = None;
     *lock(&state.multi_user.lost) = None;
@@ -537,6 +613,8 @@ pub fn invoke_on(
                 // connection is finished.
                 *slot = None;
                 drop(slot);
+                let watcher = lock(&state.multi_user.watcher).take();
+                drop(watcher);
                 *lock(&state.multi_user.connected_as) = None;
                 let reason = result
                     .as_ref()

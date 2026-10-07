@@ -4,9 +4,15 @@
  * The beat asks "what changed since my mark?" and gets back things to re-read,
  * never rows. Screens listen for the kinds they care about and re-fetch through
  * the read paths they always use, so every grant is checked again on the way.
+ *
+ * The host also nudges: a `news-nudge` event says something changed, and the
+ * beat runs at once instead of waiting its turn. The nudge carries no news of
+ * its own, so it cannot show anything the catch-up would not; the beat stays
+ * as the fallback for a network that drops the nudge connection.
  */
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invokeLocal, setConnectedToHost } from '../lib/rpc';
 import * as api from '../services/api';
 
@@ -244,7 +250,35 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     }
   }
 
+  // One catch-up at a time. A nudge that arrives mid-way asks for one more
+  // afterwards rather than a second running alongside: two in flight could
+  // finish out of order and move the mark backwards.
+  let catchingUp: Promise<void> | null = null;
+  let again = false;
+
+  function catchUpSoon() {
+    if (catchingUp) {
+      again = true;
+      return catchingUp;
+    }
+    catchingUp = (async () => {
+      do {
+        again = false;
+        await catchUpOnce();
+      } while (again && beat);
+    })().finally(() => {
+      catchingUp = null;
+    });
+    return catchingUp;
+  }
+
+  let unlistenNudge: UnlistenFn | null = null;
+
   async function catchUp() {
+    return catchUpSoon();
+  }
+
+  async function catchUpOnce() {
     try {
       const result = await api.newsCatchUp(mark);
       mark = result.mark;
@@ -269,13 +303,28 @@ export const useMultiUserStore = defineStore('multiuser', () => {
 
   function startBeat() {
     if (beat) return;
-    void catchUp();
     beat = setInterval(() => void catchUp(), NEWS_BEAT_MS);
+    void catchUp();
+    if (!unlistenNudge) {
+      listen('news-nudge', () => {
+        if (beat) void catchUp();
+      })
+        .then((unlisten) => {
+          // Stopped while the listener was being set up.
+          if (beat) unlistenNudge = unlisten;
+          else unlisten();
+        })
+        .catch(() => {
+          // No nudges, then; the beat still catches everything up.
+        });
+    }
   }
 
   function stopBeat() {
     if (beat) clearInterval(beat);
     beat = null;
+    unlistenNudge?.();
+    unlistenNudge = null;
     busy.value = {};
     maintenanceClosedBy.value = null;
     mark = null;

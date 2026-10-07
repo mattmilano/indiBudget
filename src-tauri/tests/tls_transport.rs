@@ -1341,3 +1341,115 @@ fn holds_stay_while_the_same_person_is_still_on_another_computer() {
         lease(&mut jo, "lease_acquire", "budget", "b1").is_ok()
     });
 }
+
+// ---------------------------------------------------------- push nudges
+
+use indibudget_lib::boundary::news::Mark;
+use indibudget_lib::net::client::{OnNudge, Watcher};
+use std::sync::Mutex;
+
+fn signed_in_with_ticket(fixture: &Fixture, login: &str) -> (Client, String) {
+    let (token, fingerprint) = pair_a_machine(fixture, login);
+    let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
+    let signed_in = client.sign_in(&token, login, "Password1").unwrap();
+    (client, signed_in.watch_ticket.expect("a ticket to hear about changes"))
+}
+
+fn recorder() -> (Arc<Mutex<Vec<Mark>>>, OnNudge) {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&heard);
+    (heard, Arc::new(move |mark: &Mark| sink.lock().unwrap().push(mark.clone())))
+}
+
+fn add_account(client: &mut Client, name: &str) {
+    let response = client
+        .invoke(Request::new(
+            "create_account",
+            json!({ "request": { "name": name, "account_type": "checking", "balance": "0" } }),
+        ))
+        .unwrap();
+    assert!(response.is_ok(), "{response:?}");
+}
+
+#[test]
+fn a_change_on_one_computer_is_pushed_to_another_at_once() {
+    let fixture = hosted();
+    let (_sam, ticket) = signed_in_with_ticket(&fixture, "sam");
+    let (heard, on_nudge) = recorder();
+    let watcher = Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge).unwrap();
+
+    // The first nudge says where things stand, so anything missed while the
+    // connection opened is caught up on.
+    eventually("the opening nudge", || heard.lock().unwrap().len() == 1);
+    let before = heard.lock().unwrap()[0].seq;
+
+    let mut pat = signed_in_client(&fixture, "pat");
+    let started = std::time::Instant::now();
+    add_account(&mut pat, "Holiday Fund");
+    eventually("a nudge for the new account", || {
+        heard.lock().unwrap().last().is_some_and(|m| m.seq > before)
+    });
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "the nudge took as long as a beat would have"
+    );
+    assert!(watcher.is_running());
+}
+
+#[test]
+fn a_nudge_carries_a_mark_and_nothing_about_what_changed() {
+    // The shape is the guarantee: whatever someone may not see cannot travel
+    // in a message with nowhere to put it.
+    let encoded = serde_json::to_string(&indibudget_lib::net::protocol::ServerMessage::Nudge {
+        mark: Mark { run: "r".into(), seq: 3 },
+    })
+    .unwrap();
+    assert_eq!(encoded, r#"{"type":"nudge","mark":{"run":"r","seq":3}}"#);
+}
+
+#[test]
+fn a_watch_ticket_opens_one_connection_only() {
+    let fixture = hosted();
+    let (_sam, ticket) = signed_in_with_ticket(&fixture, "sam");
+    let (_, on_nudge) = recorder();
+    let _first = Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge.clone()).unwrap();
+    assert!(Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge).is_err());
+    let (_, on_nudge) = recorder();
+    assert!(Watcher::start(fixture.addr(), fixture.fingerprint(), "made-up", on_nudge).is_err());
+}
+
+#[test]
+fn nudges_end_with_the_session() {
+    let fixture = hosted();
+
+    // Signing out: the main connection closes.
+    let (sam, ticket) = signed_in_with_ticket(&fixture, "sam");
+    let (_, on_nudge) = recorder();
+    let watcher = Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge).unwrap();
+    drop(sam);
+    eventually("nudges stop after signing out", || !watcher.is_running());
+
+    // Access removed: ends at their next click, and so does the listening.
+    let (mut alex, ticket) = signed_in_with_ticket(&fixture, "alex");
+    let (_, on_nudge) = recorder();
+    let watcher = Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge).unwrap();
+    let id = user_id(&fixture, "alex");
+    fixture
+        .db
+        .with_connection(|c| Ok(indibudget_lib::boundary::users::set_active(c, &id, false).unwrap()))
+        .unwrap();
+    assert!(alex.invoke(Request::new("get_accounts", json!(null))).is_err());
+    eventually("nudges stop once access is removed", || !watcher.is_running());
+}
+
+#[test]
+fn stopping_hosting_ends_nudges_at_once() {
+    let mut fixture = hosted();
+    let (_sam, ticket) = signed_in_with_ticket(&fixture, "sam");
+    let (_, on_nudge) = recorder();
+    let watcher = Watcher::start(fixture.addr(), fixture.fingerprint(), &ticket, on_nudge).unwrap();
+    let started = std::time::Instant::now();
+    fixture.host.stop();
+    eventually("nudges stop with hosting", || !watcher.is_running());
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}

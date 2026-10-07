@@ -21,7 +21,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
 use uuid::Uuid;
 
 use super::registry::{decode, encode, BoundaryCtx, Registry};
@@ -117,12 +118,18 @@ pub enum CatchUp {
 pub struct News {
     run: String,
     inner: Mutex<Ring>,
+    /// Signalled on every publish, so whatever pushes nudges can sleep until
+    /// there is something to nudge about rather than polling.
+    changed: Condvar,
 }
 
 #[derive(Debug)]
 struct Ring {
     entries: VecDeque<(u64, Notice)>,
     next_seq: u64,
+    /// Bumped by [`News::wake`]. A waiter compares it with the value it
+    /// started with, because a wake carries no news to look for.
+    wakes: u64,
 }
 
 impl Default for News {
@@ -138,7 +145,9 @@ impl News {
             inner: Mutex::new(Ring {
                 entries: VecDeque::new(),
                 next_seq: 1,
+                wakes: 0,
             }),
+            changed: Condvar::new(),
         }
     }
 
@@ -170,6 +179,36 @@ impl News {
         while ring.entries.len() > NEWS_CAPACITY {
             ring.entries.pop_front();
         }
+        drop(ring);
+        self.changed.notify_all();
+    }
+
+    /// Sleep until there is news after `seen`, or `timeout` passes, or someone
+    /// calls [`News::wake`]. Answers with the mark as it stands then.
+    ///
+    /// Only a mark comes back, never notices: a nudge says *that* something
+    /// changed, and the person's own catch-up — filtered by what they may see
+    /// — says *what*.
+    pub fn wait_past(&self, seen: u64, timeout: Duration) -> Mark {
+        let ring = self.lock();
+        let woken_at = ring.wakes;
+        let (ring, _) = self
+            .changed
+            .wait_timeout_while(ring, timeout, |r| {
+                r.next_seq.saturating_sub(1) <= seen && r.wakes == woken_at
+            })
+            .unwrap_or_else(|p| p.into_inner());
+        Mark {
+            run: self.run.clone(),
+            seq: ring.next_seq.saturating_sub(1),
+        }
+    }
+
+    /// Rouse everyone waiting in [`News::wait_past`] without publishing
+    /// anything, so they can notice that their reason to wait has gone.
+    pub fn wake(&self) {
+        self.lock().wakes += 1;
+        self.changed.notify_all();
     }
 
     /// Everything after `mark` that this actor is allowed to hear.
@@ -601,5 +640,52 @@ mod tests {
         let encoded = serde_json::to_string(&result).unwrap();
         let decoded: CatchUp = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded, result);
+    }
+
+    #[test]
+    fn a_waiter_hears_of_news_at_once() {
+        let news = std::sync::Arc::new(News::new());
+        let seen = news.current_mark().seq;
+        let publisher = std::sync::Arc::clone(&news);
+        let started = std::time::Instant::now();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            publisher.publish(Notice::PeopleChanged);
+        });
+        let mark = news.wait_past(seen, Duration::from_secs(10));
+        assert_eq!(mark.seq, seen + 1);
+        assert!(started.elapsed() < Duration::from_secs(5), "waited for the timeout instead");
+    }
+
+    #[test]
+    fn with_nothing_new_the_wait_ends_at_its_timeout() {
+        let news = News::new();
+        let seen = news.current_mark().seq;
+        let mark = news.wait_past(seen, Duration::from_millis(30));
+        assert_eq!(mark.seq, seen);
+    }
+
+    #[test]
+    fn news_already_waiting_is_answered_without_sleeping() {
+        let news = News::new();
+        let seen = news.current_mark().seq;
+        news.publish(Notice::PeopleChanged);
+        let started = std::time::Instant::now();
+        assert_eq!(news.wait_past(seen, Duration::from_secs(10)).seq, seen + 1);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_wake_ends_the_wait_without_any_news() {
+        let news = std::sync::Arc::new(News::new());
+        let seen = news.current_mark().seq;
+        let waker = std::sync::Arc::clone(&news);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            waker.wake();
+        });
+        let started = std::time::Instant::now();
+        assert_eq!(news.wait_past(seen, Duration::from_secs(10)).seq, seen);
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }

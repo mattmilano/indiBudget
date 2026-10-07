@@ -5,13 +5,18 @@
 //! runs in its own process: it points `XDG_DATA_HOME` at a scratch directory,
 //! and environment variables are process-wide.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use indibudget_lib::boundary::news::{Mark, Notice};
+use indibudget_lib::net::client::OnNudge;
 
 use indibudget_lib::boundary::commands::build_registry;
 use indibudget_lib::boundary::users::create_user;
 use indibudget_lib::boundary::{Grants, Response, SharedState};
 use indibudget_lib::commands::multiuser::{
-    connect_on, disconnect_on, forget_on, invoke_on, pair_on, status_of, ConnectRequest,
+    connect_on, disconnect_on, forget_on, invoke_on, pair_on, start_hosting_on, status_of,
+    stop_hosting_on, ConnectRequest,
     PairRequest,
 };
 use indibudget_lib::commands::AppState;
@@ -74,6 +79,24 @@ fn account_names(client: &AppState) -> Result<Vec<String>, String> {
     }
 }
 
+fn counter() -> (Arc<AtomicUsize>, OnNudge) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let sink = Arc::clone(&count);
+    (count, Arc::new(move |_: &Mark| {
+        sink.fetch_add(1, Ordering::SeqCst);
+    }))
+}
+
+fn wait_for(what: &str, mut check: impl FnMut() -> bool) {
+    for _ in 0..100 {
+        if check() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("never happened: {what}");
+}
+
 fn fresh_app() -> AppState {
     let state = AppState::new();
     state.init_database().unwrap();
@@ -128,6 +151,8 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     // ---- restart the app: only a sign-in is needed, and no new pairing
     drop(laptop);
     let laptop = fresh_app();
+    let (nudges, on_nudge) = counter();
+    laptop.multi_user.set_on_nudge(on_nudge);
     let status = status_of(&laptop);
     assert!(!status.connected, "a restart starts disconnected");
     let saved = status.saved_host.expect("still remembered after a restart");
@@ -135,6 +160,11 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     sign_in(&laptop, None).expect("sign in after restart, without pairing again");
     assert_eq!(account_names(&laptop).unwrap(), vec!["Joint Checking"]);
     assert_eq!(devices(&host), 1, "a restart must not add another paired computer");
+
+    // ---- a change at the host is pushed here at once, not at the next beat
+    let opening = nudges.load(Ordering::SeqCst);
+    host.state.shared.news.publish(Notice::PeopleChanged);
+    wait_for("a nudge from the host", || nudges.load(Ordering::SeqCst) > opening);
 
     // ---- pairing the same computer again replaces its entry on the host
     disconnect_on(&laptop);
@@ -192,6 +222,18 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     disconnect_on(&laptop);
     assert!(!status_of(&laptop).lost);
     assert!(account_names(&laptop).unwrap().is_empty(), "this computer's own, empty budget");
+
+    // ---- while hosting, changes nudge this computer's own window
+    let (own, on_nudge) = counter();
+    laptop.multi_user.set_on_nudge(on_nudge);
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    start_hosting_on(&laptop, Some(port)).expect("hosting");
+    invoke_on(&laptop, "create_account".into(), json!({
+        "request": { "name": "Holiday Fund", "account_type": "savings", "balance": "0" }
+    }))
+    .unwrap();
+    wait_for("a nudge for this computer's own window", || own.load(Ordering::SeqCst) > 0);
+    stop_hosting_on(&laptop);
 
     // ---- forgetting the host
     let status = forget_on(&laptop).unwrap();

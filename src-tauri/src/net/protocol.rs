@@ -2,10 +2,16 @@
 //!
 //! Strict request/reply: the client sends one message and reads one reply
 //! before sending another. There is no pipelining and no server-initiated
-//! traffic, which keeps a connection impossible to desynchronise.
+//! traffic on that connection, which keeps it impossible to desynchronise.
+//!
+//! The one thing the host says unasked — "something changed" — travels on a
+//! second connection of its own, opened with `Watch`. Mixing it into the
+//! request/reply connection would mean a nudge could arrive where a reply was
+//! expected.
 
 use serde::{Deserialize, Serialize};
 
+use crate::boundary::news::Mark;
 use crate::boundary::{Request, Response};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +37,9 @@ pub enum ClientMessage {
     },
     /// Run a boundary command. Only valid once signed in.
     Invoke { request: Request },
+    /// Turn this connection into a listener for nudges, using the ticket
+    /// handed out at sign-in. Nothing else is said on it afterwards.
+    Watch { ticket: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +52,18 @@ pub enum ServerMessage {
     Authenticated {
         display_name: String,
         is_owner: bool,
+        /// Opens one `Watch` connection for this session. Single use, and
+        /// worthless once the session ends.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        watch_ticket: Option<String>,
     },
+    /// A `Watch` was accepted; nudges follow.
+    Watching,
+    /// Something changed, up to `mark`. Only the mark: what changed is asked
+    /// for through the ordinary catch-up, so it is filtered by what this
+    /// person may see in the one place that already does that. Also sent with
+    /// an unchanged mark now and then, so a host that vanished is noticed.
+    Nudge { mark: Mark },
     /// A boundary reply.
     Reply { response: Response },
     /// Anything refused, with the sentence to show the person.
@@ -96,6 +116,9 @@ mod tests {
             ClientMessage::Invoke {
                 request: Request::new("get_accounts", json!({})),
             },
+            ClientMessage::Watch {
+                ticket: "ticket".into(),
+            },
         ];
 
         for message in messages {
@@ -118,6 +141,11 @@ mod tests {
             ServerMessage::Authenticated {
                 display_name: "Alex".into(),
                 is_owner: false,
+                watch_ticket: Some("ticket".into()),
+            },
+            ServerMessage::Watching,
+            ServerMessage::Nudge {
+                mark: Mark { run: "run".into(), seq: 7 },
             },
             ServerMessage::Reply {
                 response: Response::ok(json!({ "ok": true })),
@@ -140,6 +168,7 @@ mod tests {
         let encoded = serde_json::to_string(&ServerMessage::Authenticated {
             display_name: "Alex".into(),
             is_owner: false,
+            watch_ticket: None,
         })
         .unwrap();
         assert!(!encoded.contains("password"));
