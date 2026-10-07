@@ -77,7 +77,7 @@ import Icon from '@components/Icon.astro';
           <li><strong>Footer</strong> — Shows the app version.</li>
         </ul>
         <h3>Sidebar Navigation</h3>
-        <p>The sidebar contains links to: Dashboard, Calendar, Transactions, Accounts, Budgets, Categories, Payees, Goals, Recurring, Reports, Import, Sharing, Settings, and About.</p>
+        <p>The sidebar contains links to: Dashboard, Calendar, Transactions, Accounts, Budgets, Categories, Payees, Goals, Recurring, Reports, Import, Sharing, People, Settings, and About.</p>
         <p>Click the collapse button (double chevron) to toggle between full sidebar and icon-only mode. Your preference is remembered across sessions.</p>
         <h3>Theme Support</h3>
         <p>indiBudget supports Light, Dark, and System themes. Change your theme in <strong>Settings</strong>.</p>
@@ -461,6 +461,7 @@ import Icon from '@components/Icon.astro';
         <h3>Adding a Computer</h3>
         <p>On the host:</p>
         <ol>
+          <li>Make sure the person has a login — see <a href="#sharing-people">Adding People</a> below.</li>
           <li>Click <strong>Start pairing</strong>. A short code appears, good for a few minutes.</li>
         </ol>
         <p>On the other computer:</p>
@@ -493,6 +494,18 @@ import Icon from '@components/Icon.astro';
         <p>Reports show totals and per-category sums rather than individual transactions, which is why someone can be given the charts without being given the ledger.</p>
         <p><strong>Administrators</strong> always have full access to everything, whatever else is set.</p>
 
+        <h3 id="sharing-people">Adding People</h3>
+        <p>Pairing a computer only lets it ask to connect — each person still needs a login of their own on the host before they can sign in. On the host:</p>
+        <ol>
+          <li>Go to <strong>People</strong> (the Sharing screen links there too).</li>
+          <li>Enter a name, a login and a starting password.</li>
+          <li>Pick what they can reach: <strong>Administrator</strong>, <strong>Full access</strong>, <strong>Records spending</strong>, <strong>View only</strong>, or set each area yourself.</li>
+          <li>Click <strong>Add person</strong>, then tell them their login and password.</li>
+        </ol>
+        <p>From the same screen an administrator can change someone's access, set a new password for someone who has forgotten theirs, deactivate or reactivate them, or remove them altogether. Changes count from that person's next click — nobody has to sign out and back in.</p>
+        <p>Nobody can deactivate, demote or remove their own account; another administrator has to. That keeps a budget from being left with no one able to run it.</p>
+        <p>Anyone signed in from another computer can change their own password from the Sharing screen, by entering their current one first.</p>
+
         <h3>Working at the Same Time</h3>
         <p>Two people entering transactions never wait on each other. Logging the evening's receipts from two computers at once works exactly as you would hope.</p>
         <p>Budgets, accounts, categories and goals are different — two people editing the same one would mean somebody retypes their work. So opening one for editing holds it, and anyone else who opens it sees a note naming who is editing, <em>before</em> they start typing rather than after they try to save.</p>
@@ -512,10 +525,10 @@ import Icon from '@components/Icon.astro';
         <h3>Removing Access</h3>
         <p>Two separate levers, because they answer different questions:</p>
         <ul>
-          <li><strong>Revoke a computer</strong> — for a laptop that was lost or sold. It stops connecting the next time it tries. Nobody's password changes, and other computers are unaffected.</li>
+          <li><strong>Revoke a computer</strong> — for a laptop that was lost or sold. It is disconnected straight away. Nobody's password changes, and other computers are unaffected.</li>
           <li><strong>Deactivate a person</strong> — for someone who should no longer have access. They can no longer sign in from any computer, and no machine needs re-pairing.</li>
         </ul>
-        <p>Revoking applies at the next connection rather than instantly, so a session already open finishes what it is doing.</p>
+        <p>Both take effect at once. Someone already signed in is disconnected on their next click, and so is a revoked computer, rather than carrying on until they next sign in.</p>
 
         <h3>What Stays on the Host</h3>
         <p>Some things are about a particular computer rather than the budget, and only ever run on the host:</p>

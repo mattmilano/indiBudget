@@ -32,6 +32,8 @@ const DEFERRED_AUTHORIZATION: &[&str] = &[
     "news_catch_up",
     // Anyone may see why their saves are being refused.
     "maintenance_status",
+    // Touches only the caller's own account, proving the current password.
+    "change_own_password",
 ];
 
 /// Commands that legitimately do their work with no arguments at all.

@@ -27,6 +27,8 @@ export interface HostingStatus {
   saved_host: SavedHost | null;
   /** The connection to the host dropped and has not been re-established. */
   lost: boolean;
+  /** Why, in a sentence: the host went away, or ended this person's session. */
+  lost_reason: string | null;
 }
 
 export interface SavedHost {
@@ -37,7 +39,13 @@ export interface SavedHost {
 }
 
 export interface Notice {
-  kind: 'record_changed' | 'record_busy' | 'record_freed' | 'maintenance_on' | 'maintenance_off';
+  kind:
+    | 'record_changed'
+    | 'record_busy'
+    | 'record_freed'
+    | 'people_changed'
+    | 'maintenance_on'
+    | 'maintenance_off';
   area?: string;
   record_kind?: string;
   record_id?: string;
@@ -66,6 +74,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     signed_in_as: null,
     saved_host: null,
     lost: false,
+    lost_reason: null,
   });
 
   const pairingCode = ref<string | null>(null);
@@ -77,6 +86,9 @@ export const useMultiUserStore = defineStore('multiuser', () => {
 
   /** Bumped whenever something changed, so screens can watch one number. */
   const changeTick = ref(0);
+
+  /** Bumped when anyone's access changed, for the People screen. */
+  const peopleTick = ref(0);
 
   /** Set when the host restarted or we fell too far behind. */
   const needsFullRefresh = ref(false);
@@ -199,6 +211,12 @@ export const useMultiUserStore = defineStore('multiuser', () => {
       case 'maintenance_off':
         maintenanceClosedBy.value = null;
         break;
+      case 'people_changed':
+        // Someone's access moved. What this window may see could have
+        // shifted, so everything on screen is re-read.
+        peopleTick.value += 1;
+        changeTick.value += 1;
+        break;
     }
   }
 
@@ -250,6 +268,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     error,
     busy,
     changeTick,
+    peopleTick,
     needsFullRefresh,
     isSharing,
     isClosed,

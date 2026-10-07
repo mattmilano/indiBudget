@@ -50,6 +50,19 @@ const hostingPort = computed(() => {
   return first.split(':').pop() || '7420';
 });
 
+const activePeople = computed(() => people.value.filter((p) => p.is_active).length);
+
+const ownCurrent = ref('');
+const ownNew = ref('');
+async function changeOwnPassword() {
+  await run('Could not change your password', async () => {
+    await api.changeOwnPassword(ownCurrent.value, ownNew.value);
+    ownCurrent.value = '';
+    ownNew.value = '';
+    notice.value = 'Your password was changed. Use the new one next time you sign in.';
+  });
+}
+
 const mode = computed(() => {
   if (store.status.connected) return 'connected';
   if (store.status.hosting) return 'hosting';
@@ -113,8 +126,8 @@ onMounted(async () => {
       v-if="store.status.lost"
       class="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-sm"
     >
-      The connection to the computer hosting the budget was lost — it may have stopped hosting or
-      gone to sleep. Sign in again below once it is back.
+      {{ store.status.lost_reason ?? 'The connection to the computer hosting the budget was lost.' }}
+      Sign in again below once that is sorted out.
     </div>
 
     <div
@@ -352,22 +365,33 @@ onMounted(async () => {
           </li>
         </ul>
         <p class="text-xs text-gray-500 mt-2">
-          Revoking takes effect the next time that computer connects.
+          Revoking takes effect at once: that computer is disconnected on its next click.
         </p>
       </div>
 
-      <div v-if="people.length" class="p-5 rounded-xl border border-gray-200 dark:border-gray-700">
-        <h2 class="font-semibold text-gray-900 dark:text-white mb-3">People</h2>
-        <ul class="divide-y divide-gray-100 dark:divide-gray-800">
-          <li v-for="p in people" :key="p.id" class="py-2 flex items-center justify-between">
-            <span>
-              {{ p.display_name }}
-              <span class="text-xs text-gray-500">({{ p.login }})</span>
-              <span v-if="p.is_owner" class="ml-2 text-xs text-blue-600">administrator</span>
-            </span>
-            <span v-if="!p.is_active" class="text-xs text-gray-400">deactivated</span>
-          </li>
-        </ul>
+      <div
+        class="p-5 rounded-xl border"
+        :class="
+          activePeople
+            ? 'border-gray-200 dark:border-gray-700'
+            : 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20'
+        "
+      >
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-1">People</h2>
+        <p v-if="activePeople" class="text-sm text-gray-700 dark:text-gray-300">
+          {{ activePeople }} {{ activePeople === 1 ? 'person' : 'people' }} can sign in from another
+          computer.
+        </p>
+        <p v-else class="text-sm text-amber-800 dark:text-amber-300">
+          Nobody can sign in from another computer yet. Pairing a computer only lets it ask; each
+          person also needs a login of their own.
+        </p>
+        <router-link
+          to="/people"
+          class="inline-block mt-3 px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700"
+        >
+          {{ activePeople ? 'Manage people' : 'Add people' }}
+        </router-link>
       </div>
     </section>
 
@@ -391,6 +415,34 @@ onMounted(async () => {
           Disconnect
         </button>
       </div>
+
+      <details class="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+        <summary class="text-sm text-gray-800 dark:text-gray-200 cursor-pointer">Change your password</summary>
+        <div class="mt-3 grid gap-2 max-w-sm">
+          <input
+            v-model="ownCurrent"
+            type="password"
+            placeholder="Current password"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+          />
+          <input
+            v-model="ownNew"
+            type="password"
+            placeholder="New password"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+          />
+          <p class="text-xs text-gray-600 dark:text-gray-400">
+            At least 8 characters, with an uppercase letter, a lowercase letter and a number.
+          </p>
+          <button
+            :disabled="busy || !ownCurrent || !ownNew"
+            class="justify-self-start px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            @click="changeOwnPassword"
+          >
+            Change password
+          </button>
+        </div>
+      </details>
     </section>
   </div>
 </template>

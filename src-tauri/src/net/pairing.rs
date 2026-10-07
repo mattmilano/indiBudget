@@ -241,6 +241,21 @@ pub fn device_for_token(conn: &Connection, token: &str) -> Result<Option<Device>
     .map_err(map_db)
 }
 
+/// Whether a paired computer may still connect. Checked on every request, so
+/// revoking a lost laptop counts from its very next click, not its next
+/// sign-in.
+pub fn device_is_active(conn: &Connection, device_id: &str) -> Result<bool, BoundaryError> {
+    let active: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM devices WHERE id = ?1 AND is_revoked = 0",
+            [device_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(map_db)?;
+    Ok(active.is_some())
+}
+
 pub fn touch_device(conn: &Connection, device_id: &str) -> Result<(), BoundaryError> {
     conn.execute(
         "UPDATE devices SET last_seen_at = ?1 WHERE id = ?2",
@@ -273,9 +288,8 @@ pub fn list_devices(conn: &Connection) -> Result<Vec<Device>, BoundaryError> {
     Ok(devices)
 }
 
-/// Revoke a machine. Takes effect at its next connection — a session already
-/// running finishes what it is doing. The lever is for the machine, not the
-/// moment.
+/// Revoke a machine. The host re-checks the device on every request, so a
+/// session already open on it is cut off at its next click.
 pub fn revoke_device(conn: &Connection, device_id: &str) -> Result<(), BoundaryError> {
     let changed = conn
         .execute(

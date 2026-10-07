@@ -343,7 +343,13 @@ impl Client {
     pub fn invoke(&mut self, request: Request) -> Result<Response, BoundaryError> {
         match self.exchange(ClientMessage::Invoke { request })? {
             ServerMessage::Reply { response } => Ok(response),
-            ServerMessage::Refused { sentence, .. } => Err(BoundaryError::invalid(sentence)),
+            // A refusal of the request as a whole, rather than an answer to it,
+            // means the host ended this session — access removed, computer
+            // revoked. Carrying on would only collect "please sign in first".
+            ServerMessage::Refused { sentence, .. } => {
+                self.broken = true;
+                Err(BoundaryError::invalid(sentence))
+            }
             other => Err(BoundaryError::internal(format!(
                 "Unexpected reply to a request: {other:?}"
             ))),

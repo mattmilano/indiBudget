@@ -64,6 +64,11 @@ const router = createRouter({
       component: () => import('../views/SharingView.vue'),
     },
     {
+      path: '/people',
+      name: 'people',
+      component: () => import('../views/PeopleView.vue'),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('../views/SettingsView.vue'),

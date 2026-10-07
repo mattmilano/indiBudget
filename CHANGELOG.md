@@ -19,6 +19,9 @@ across the home network — no cloud service is involved at any point.
 - Pairing with a short code read off the host's screen, plus an identity code
   that can be compared aloud to confirm you reached the right computer
 - Per-person logins secured with Argon2id
+- A People screen for adding household members, choosing what each can reach
+  (with ready-made presets), resetting passwords, and deactivating or removing
+  someone. Anyone can change their own password
 - Five permission areas — Money, Planning, Structure, Reports and Admin — each
   settable to no access, read, or read and write
 - Live updates, so a change made on one computer appears on the others within
@@ -73,6 +76,9 @@ across the home network — no cloud service is involved at any point.
   if the host's identity ever changes
 - Repeated failed sign-ins are slowed down, and a failed attempt reveals nothing
   about whether that login exists
+- Access changes, deactivation and revoking a computer take effect on the very
+  next request, not the next sign-in. Nobody can deactivate, demote or remove
+  their own account
 - All known vulnerabilities in third-party packages resolved; `npm audit`
   reports none
 

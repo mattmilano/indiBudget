@@ -58,6 +58,9 @@ pub enum Notice {
         record_kind: String,
         record_id: String,
     },
+    /// Someone's access changed. Names nobody: what matters is that what each
+    /// window may see could have shifted, so everyone re-reads.
+    PeopleChanged,
     /// The host closed the file for maintenance.
     MaintenanceOn { closed_by: String },
     /// The host reopened it.
@@ -75,7 +78,7 @@ impl Notice {
             Notice::RecordChanged { area, .. }
             | Notice::RecordBusy { area, .. }
             | Notice::RecordFreed { area, .. } => Some(*area),
-            Notice::MaintenanceOn { .. } | Notice::MaintenanceOff => None,
+            Notice::MaintenanceOn { .. } | Notice::MaintenanceOff | Notice::PeopleChanged => None,
         }
     }
 

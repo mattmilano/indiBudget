@@ -44,7 +44,7 @@ pub struct MultiUser {
     /// from this computer's own database. Answering locally would quietly show
     /// a different — usually empty — budget, and look like everything had been
     /// lost.
-    lost: Mutex<bool>,
+    lost: Mutex<Option<String>>,
 }
 
 impl MultiUser {
@@ -142,6 +142,8 @@ pub struct HostingStatus {
     pub saved_host: Option<SavedHostView>,
     /// The connection to the host dropped and has not been re-established.
     pub lost: bool,
+    /// Why, in a sentence: the host went away, or ended this person's session.
+    pub lost_reason: Option<String>,
 }
 
 pub fn status_of(state: &AppState) -> HostingStatus {
@@ -169,6 +171,14 @@ pub fn status_of(state: &AppState) -> HostingStatus {
         last_login: s.last_login,
     });
 
+    // Each lock is taken and released in its own statement. Inside one struct
+    // literal the guards are temporaries that all live until the literal ends,
+    // so taking the same mutex twice there deadlocks the thread — which is
+    // exactly what reading `lost` twice did.
+    let connected = lock(&state.multi_user.client).is_some();
+    let signed_in_as = lock(&state.multi_user.connected_as).clone();
+    let lost_reason = lock(&state.multi_user.lost).clone();
+
     HostingStatus {
         hosting,
         address: addresses.first().cloned(),
@@ -176,10 +186,11 @@ pub fn status_of(state: &AppState) -> HostingStatus {
         fingerprint: fingerprint.map(|f| f.to_hex()),
         fingerprint_groups: fingerprint.map(|f| f.display_groups()),
         pairing,
-        connected: lock(&state.multi_user.client).is_some(),
-        signed_in_as: lock(&state.multi_user.connected_as).clone(),
+        connected,
+        signed_in_as,
         saved_host,
-        lost: *lock(&state.multi_user.lost),
+        lost: lost_reason.is_some(),
+        lost_reason,
     }
 }
 
@@ -357,7 +368,7 @@ pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingSt
 
     *lock(&state.multi_user.client) = Some(client);
     *lock(&state.multi_user.connected_as) = Some(session.display_name);
-    *lock(&state.multi_user.lost) = false;
+    *lock(&state.multi_user.lost) = None;
     Ok(status_of(state))
 }
 
@@ -372,7 +383,7 @@ pub async fn connect_to_host(
 pub fn disconnect_on(state: &AppState) -> HostingStatus {
     *lock(&state.multi_user.client) = None;
     *lock(&state.multi_user.connected_as) = None;
-    *lock(&state.multi_user.lost) = false;
+    *lock(&state.multi_user.lost) = None;
     status_of(state)
 }
 
@@ -437,21 +448,28 @@ pub fn invoke_on(
         if let Some(client) = slot.as_mut() {
             let result = client.invoke(request);
             if client.is_broken() {
-                // A late reply could now arrive as the answer to the next
-                // request, so this connection is finished.
+                // Either a late reply could now arrive as the answer to the
+                // next request, or the host ended the session. Either way this
+                // connection is finished.
                 *slot = None;
                 drop(slot);
                 *lock(&state.multi_user.connected_as) = None;
-                *lock(&state.multi_user.lost) = true;
+                let reason = result
+                    .as_ref()
+                    .err()
+                    .map(|e| e.sentence())
+                    .unwrap_or_else(|| "The connection to the host was lost.".into());
+                *lock(&state.multi_user.lost) = Some(reason);
             }
             return result.map_err(|e| e.sentence());
         }
     }
 
-    if *lock(&state.multi_user.lost) {
-        return Err("The connection to the computer hosting the budget was lost. \
-                    Go to Sharing to sign in again."
-            .into());
+    // Bound first: an `if let` keeps its scrutinee's lock guard alive for the
+    // whole block, which is one future edit away from the double-lock above.
+    let lost_reason = lock(&state.multi_user.lost).clone();
+    if let Some(reason) = lost_reason {
+        return Err(format!("{reason} Nothing here can be shown until you sign in again from Sharing."));
     }
 
     let db = db_of(state)?;

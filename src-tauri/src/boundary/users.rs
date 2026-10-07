@@ -290,6 +290,71 @@ pub fn set_active(conn: &Connection, user_id: &str, is_active: bool) -> Result<(
     Ok(())
 }
 
+pub fn set_owner(conn: &Connection, user_id: &str, is_owner: bool) -> Result<(), BoundaryError> {
+    let changed = conn
+        .execute(
+            "UPDATE users SET is_owner = ?1, updated_at = ?2 WHERE id = ?3",
+            params![is_owner as i64, Utc::now().to_rfc3339(), user_id],
+        )
+        .map_err(map_db)?;
+    if changed == 0 {
+        return Err(BoundaryError::invalid("That person is no longer in the list."));
+    }
+    Ok(())
+}
+
+/// Remove a person. Their grants go with them; rows they created keep the
+/// stamp, which is the truth about who wrote them.
+pub fn delete_user(conn: &Connection, user_id: &str) -> Result<(), BoundaryError> {
+    conn.execute("DELETE FROM user_grants WHERE user_id = ?1", [user_id])
+        .map_err(map_db)?;
+    let changed = conn
+        .execute("DELETE FROM users WHERE id = ?1", [user_id])
+        .map_err(map_db)?;
+    if changed == 0 {
+        return Err(BoundaryError::invalid("That person is no longer in the list."));
+    }
+    Ok(())
+}
+
+/// Who this person is *now*, read fresh from the file.
+///
+/// `None` when they have been deleted or deactivated. The host calls this on
+/// every request rather than trusting the actor it built at sign-in: anything
+/// decided at sign-in is stale by the next click, and an administrator who
+/// removes someone's access means it to count immediately, not whenever that
+/// person next reconnects.
+pub fn standing(conn: &Connection, user_id: &str) -> Result<Option<Actor>, BoundaryError> {
+    let Some(user) = get_user(conn, user_id)? else {
+        return Ok(None);
+    };
+    if !user.is_active {
+        return Ok(None);
+    }
+    let grants = grants_for(conn, &user.id)?;
+    Ok(Some(Actor::new(user.id, user.display_name, user.is_owner, grants)))
+}
+
+/// Change your own password, proving the current one first.
+pub fn change_own_password(
+    conn: &Connection,
+    user_id: &str,
+    current: &str,
+    new_password: &str,
+) -> Result<(), BoundaryError> {
+    let stored: Option<String> = conn
+        .query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |row| row.get(0))
+        .optional()
+        .map_err(map_db)?;
+    let Some(stored) = stored else {
+        return Err(BoundaryError::invalid("Your account is no longer in the list."));
+    };
+    if !verify_password(&stored, current) {
+        return Err(BoundaryError::invalid("Your current password is not right."));
+    }
+    change_password(conn, user_id, new_password)
+}
+
 pub fn change_password(
     conn: &Connection,
     user_id: &str,

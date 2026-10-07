@@ -275,6 +275,20 @@ impl Leases {
         freed
     }
 
+    /// Drop every hold belonging to a person, under either principal they
+    /// could have held it as — for when their account is deactivated, deleted,
+    /// or changes role, which changes the principal they would renew under.
+    pub fn release_user(&self, user_id: &str) -> Vec<LeaseKey> {
+        let mut held = self.lock();
+        let freed: Vec<LeaseKey> = held
+            .iter()
+            .filter(|(_, h)| h.holder.user_id == user_id)
+            .map(|(key, _)| key.clone())
+            .collect();
+        held.retain(|_, h| h.holder.user_id != user_id);
+        freed
+    }
+
     /// Drop every hold this actor has, for a sign-out or a dropped connection.
     pub fn release_everything_for(&self, actor: &Actor) -> Vec<LeaseKey> {
         let me = Principal::of(actor);

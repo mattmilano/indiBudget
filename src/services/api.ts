@@ -371,24 +371,49 @@ export const newsCatchUp = (mark: { run: string; seq: number } | null) =>
     | { status: 'start_over'; mark: { run: string; seq: number } }
   >('news_catch_up', { mark });
 
-export const listUsers = () => invoke<any[]>('list_users');
+/** A person as the People screen shows them. Never carries a password hash. */
+export interface Person {
+  id: string;
+  login: string;
+  display_name: string;
+  is_owner: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  row_version: number;
+  /** Area -> 'read' | 'write'. An area left out means no access. */
+  grants: Record<string, AccessLevel>;
+}
+
+export type AccessLevel = 'none' | 'read' | 'write';
+
+export const listUsers = () => invoke<Person[]>('list_users');
 
 export const createPerson = (request: {
   login: string;
   displayName: string;
   password: string;
   isOwner: boolean;
-  grants: Record<string, string>;
-}) => invoke<any>('create_user', request);
+  grants: Record<string, AccessLevel>;
+}) => invoke<Person>('create_user', request);
 
-export const setUserGrants = (userId: string, grants: Record<string, string>) =>
-  invoke<{ updated: boolean }>('set_user_grants', { userId, grants });
+export const setUserGrants = (
+  userId: string,
+  grants: Record<string, AccessLevel>,
+  isOwner?: boolean
+) => invoke<{ updated: boolean }>('set_user_grants', { userId, grants, isOwner: isOwner ?? null });
 
 export const setUserActive = (userId: string, isActive: boolean) =>
   invoke<{ updated: boolean }>('set_user_active', { userId, isActive });
 
 export const changeUserPassword = (userId: string, newPassword: string) =>
   invoke<{ updated: boolean }>('change_user_password', { userId, newPassword });
+
+export const deleteUser = (userId: string) =>
+  invoke<{ deleted: boolean }>('delete_user', { userId });
+
+export const changeOwnPassword = (currentPassword: string, newPassword: string) =>
+  invoke<{ updated: boolean }>('change_own_password', { currentPassword, newPassword });
 
 export const listDevices = () => invoke<any[]>('list_devices');
 

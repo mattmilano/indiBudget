@@ -19,13 +19,13 @@ use std::time::{Duration, Instant};
 use super::frame::{read_frame, write_frame};
 use super::identity::HostIdentity;
 use super::pairing::{
-    attempt_pairing, device_for_token, generate_code, register_device, touch_device, PairingOutcome,
+    attempt_pairing, device_for_token, device_is_active, generate_code, register_device, touch_device, PairingOutcome,
     PairingWindow,
 };
 use super::protocol::{ClientMessage, ServerMessage};
 use super::throttle::Throttle;
 use crate::boundary::registry::{dispatch, BoundaryCtx, Registry};
-use crate::boundary::users::authenticate;
+use crate::boundary::users::{authenticate, standing};
 use crate::boundary::news::Notice;
 use crate::boundary::{Actor, BoundaryError, SharedState};
 use crate::database::Database;
@@ -133,7 +133,12 @@ impl HostState {
     }
 
     /// Check a device token and a person's credentials.
-    fn judge_sign_in(&self, token: &str, login: &str, password: &str) -> Result<Actor, ServerMessage> {
+    fn judge_sign_in(
+        &self,
+        token: &str,
+        login: &str,
+        password: &str,
+    ) -> Result<(Actor, String), ServerMessage> {
         let now = Instant::now();
 
         if let Some(wait) = self.throttle.retry_after(login, now) {
@@ -174,12 +179,61 @@ impl HostState {
                 let _ = self
                     .db
                     .with_connection(|conn| Ok(touch_device(conn, &device.id)));
-                Ok(actor)
+                Ok((actor, device.id))
             }
             Err(e) => {
                 self.throttle.record_failure(login, now);
                 Err(ServerMessage::refused(e.sentence()))
             }
+        }
+    }
+}
+
+/// Who signed in on a connection, and from which computer.
+///
+/// The actor is a cache, refreshed from the file before every request — see
+/// [`HostState::current_standing`].
+struct Session {
+    user_id: String,
+    device_id: String,
+    actor: Actor,
+}
+
+/// Why a session ended partway, in the person's words.
+const ACCESS_REMOVED: &str = "Your access to this budget has been removed. \
+    Ask whoever manages it if that is a mistake.";
+const DEVICE_REVOKED: &str = "This computer is no longer connected to that budget. \
+    It will need to be paired again.";
+
+impl HostState {
+    /// Re-check a session against the file. Deactivation, deletion, a change of
+    /// access and a revoked computer all count from the very next request,
+    /// rather than whenever that person happens to reconnect.
+    fn current_standing(&self, session: &Session) -> Result<Actor, &'static str> {
+        let device_ok = self
+            .db
+            .with_connection(|conn| Ok(device_is_active(conn, &session.device_id)))
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or(false);
+        if !device_ok {
+            return Err(DEVICE_REVOKED);
+        }
+        self.db
+            .with_connection(|conn| Ok(standing(conn, &session.user_id)))
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(ACCESS_REMOVED)
+    }
+
+    fn release_holds_of(&self, actor: &Actor) {
+        for key in self.shared.leases.release_everything_for(actor) {
+            self.shared.news.publish(Notice::RecordFreed {
+                area: key.kind.area(),
+                record_kind: key.kind.label().to_string(),
+                record_id: key.record_id,
+            });
         }
     }
 }
@@ -328,7 +382,7 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
     let mut tls = StreamOwned::new(conn, stream);
 
     // Nobody is signed in until they say who they are.
-    let mut actor: Option<Actor> = None;
+    let mut session: Option<Session> = None;
 
     loop {
         let Ok(raw) = read_frame(&mut tls) else {
@@ -336,7 +390,7 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
         };
 
         let reply = match serde_json::from_str::<ClientMessage>(&raw) {
-            Ok(message) => handle_message(&state, &mut actor, message),
+            Ok(message) => handle_message(&state, &mut session, message),
             Err(e) => ServerMessage::refused(format!("That message could not be read: {e}")),
         };
 
@@ -351,25 +405,19 @@ fn serve_connection(state: Arc<HostState>, config: Arc<ServerConfig>, stream: Tc
     // A machine that closed its lid should not leave the grocery budget held
     // for the rest of the lease. Passive expiry would clear it eventually;
     // this clears it now.
-    if let Some(actor) = actor.as_ref() {
-        for key in state.shared.leases.release_everything_for(actor) {
-            state.shared.news.publish(Notice::RecordFreed {
-                area: key.kind.area(),
-                record_kind: key.kind.label().to_string(),
-                record_id: key.record_id,
-            });
-        }
+    if let Some(session) = session.as_ref() {
+        state.release_holds_of(&session.actor);
     }
 }
 
 fn handle_message(
     state: &Arc<HostState>,
-    actor: &mut Option<Actor>,
+    session: &mut Option<Session>,
     message: ClientMessage,
 ) -> ServerMessage {
     match message {
         ClientMessage::Pair { proof, label } => {
-            if actor.is_some() {
+            if session.is_some() {
                 return ServerMessage::refused("This computer is already connected.");
             }
             state.judge_pairing(&proof, &label)
@@ -380,25 +428,39 @@ fn handle_message(
             login,
             password,
         } => match state.judge_sign_in(&device_token, &login, &password) {
-            Ok(signed_in) => {
+            Ok((signed_in, device_id)) => {
                 let reply = ServerMessage::Authenticated {
                     display_name: signed_in.display_name.clone(),
                     is_owner: signed_in.is_owner,
                 };
-                *actor = Some(signed_in);
+                *session = Some(Session {
+                    user_id: signed_in.user_id.clone(),
+                    device_id,
+                    actor: signed_in,
+                });
                 reply
             }
             Err(refusal) => refusal,
         },
 
         ClientMessage::Invoke { request } => {
-            let Some(signed_in) = actor.as_ref() else {
+            let Some(current) = session.as_mut() else {
                 return ServerMessage::refused("Please sign in first.");
             };
 
+            // The actor built at sign-in is a claim to re-check, not a fact.
+            match state.current_standing(current) {
+                Ok(fresh) => current.actor = fresh,
+                Err(why) => {
+                    let ended = session.take().expect("checked above");
+                    state.release_holds_of(&ended.actor);
+                    return ServerMessage::refused(why);
+                }
+            }
+
             // The identity used here comes from the connection, never from the
             // request body, so no client can name itself administrator.
-            let ctx = BoundaryCtx::new(&state.db, signed_in, &state.shared);
+            let ctx = BoundaryCtx::new(&state.db, &current.actor, &state.shared);
             ServerMessage::Reply {
                 response: dispatch(&state.registry, &ctx, request),
             }

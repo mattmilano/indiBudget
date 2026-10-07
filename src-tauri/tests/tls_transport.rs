@@ -342,8 +342,8 @@ fn a_revoked_machine_cannot_sign_in_again() {
         .with_connection(|conn| Ok(revoke_device(conn, &device_id).unwrap()))
         .unwrap();
 
-    // The next connection is refused. Revocation applies at the next
-    // connection, not the next instant — the lever is for the machine.
+    // The next connection is refused too. (A session that was already open is
+    // cut off on its next request; see revoking_a_computer_counts_...)
     let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
     let err = client.sign_in(&token, "sam", "Password1").unwrap_err();
     assert!(
@@ -1077,4 +1077,178 @@ fn a_host_that_accepts_but_never_answers_gives_up_with_a_sentence() {
     });
     let err = outcome.expect_err("a silent host must not count as connected");
     assert!(err.sentence().contains("did not answer"), "{}", err.sentence());
+}
+
+// ------------------------------------- access changes count from the next click
+//
+// From the indiDatabase handoff: "anything decided at sign-in is stale by the
+// next click." Each of these used to be decided once, at sign-in.
+
+/// Sign in as `login` from a freshly paired machine.
+fn session(fixture: &Fixture, login: &str) -> Client {
+    let (token, fingerprint) = pair_a_machine(fixture, login);
+    let mut client = Client::connect(fixture.addr(), fingerprint).unwrap();
+    client.sign_in(&token, login, "Password1").unwrap();
+    client
+}
+
+fn admin(client: &mut Client, command: &str, args: serde_json::Value) -> Response {
+    client.invoke(Request::new(command, args)).expect("reaches the host")
+}
+
+fn user_id(fixture: &Fixture, login: &str) -> String {
+    fixture
+        .db
+        .with_connection(|c| {
+            Ok(indibudget_lib::boundary::users::list_users(c)
+                .unwrap()
+                .into_iter()
+                .find(|u| u.login == login)
+                .unwrap()
+                .id)
+        })
+        .unwrap()
+}
+
+#[test]
+fn deactivating_someone_counts_from_their_next_request() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let mut alex = session(&fixture, "alex");
+    assert!(alex.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
+
+    let alex_id = user_id(&fixture, "alex");
+    assert!(admin(&mut sam, "set_user_active", json!({ "userId": alex_id, "isActive": false })).is_ok());
+
+    let err = alex.invoke(Request::new("get_accounts", json!(null))).unwrap_err();
+    assert!(err.sentence().contains("access to this budget has been removed"), "{}", err.sentence());
+    assert!(alex.is_broken(), "the session should end rather than linger");
+}
+
+#[test]
+fn narrowing_someones_access_counts_from_their_next_request() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let mut alex = session(&fixture, "alex"); // Money: read
+    assert!(alex.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
+
+    let alex_id = user_id(&fixture, "alex");
+    assert!(admin(&mut sam, "set_user_grants", json!({ "userId": alex_id, "grants": {} })).is_ok());
+
+    match alex.invoke(Request::new("get_accounts", json!(null))).unwrap() {
+        Response::Err { sentence, .. } => assert!(sentence.contains("Money"), "{sentence}"),
+        Response::Ok { .. } => panic!("Alex kept a grant that had been taken away"),
+    }
+}
+
+#[test]
+fn widening_someones_access_counts_without_signing_in_again() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let mut alex = session(&fixture, "alex"); // nothing on Structure
+    assert!(!alex.invoke(Request::new("get_categories", json!(null))).unwrap().is_ok());
+
+    let alex_id = user_id(&fixture, "alex");
+    admin(&mut sam, "set_user_grants", json!({ "userId": alex_id, "grants": { "structure": "read" } }));
+    assert!(alex.invoke(Request::new("get_categories", json!(null))).unwrap().is_ok());
+}
+
+#[test]
+fn revoking_a_computer_counts_from_its_next_request() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let mut laptop = session(&fixture, "alex");
+
+    let devices = fixture.db.with_connection(|c| Ok(list_devices(c).unwrap())).unwrap();
+    let alex_device = devices.iter().find(|d| d.label == "alex").unwrap().id.clone();
+    assert!(admin(&mut sam, "revoke_device", json!({ "deviceId": alex_device })).is_ok());
+
+    let err = laptop.invoke(Request::new("get_accounts", json!(null))).unwrap_err();
+    assert!(err.sentence().contains("paired again"), "{}", err.sentence());
+}
+
+#[test]
+fn deleting_someone_ends_their_session_and_frees_their_holds() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let mut jo = session(&fixture, "jo"); // Planning: write
+    assert!(lease(&mut jo, "lease_acquire", "budget", "groceries").is_ok());
+
+    let jo_id = user_id(&fixture, "jo");
+    assert!(admin(&mut sam, "delete_user", json!({ "userId": jo_id })).is_ok());
+
+    assert!(
+        lease(&mut sam, "lease_acquire", "budget", "groceries").is_ok(),
+        "a deleted person's hold should be released at once"
+    );
+    let err = jo.invoke(Request::new("get_budgets", json!(null))).unwrap_err();
+    assert!(err.sentence().contains("removed"), "{}", err.sentence());
+}
+
+#[test]
+fn nobody_can_deactivate_demote_or_delete_their_own_account() {
+    let fixture = hosted();
+    let mut pat = session(&fixture, "pat"); // an administrator
+    let me = user_id(&fixture, "pat");
+
+    for (command, args) in [
+        ("set_user_active", json!({ "userId": me, "isActive": false })),
+        ("set_user_grants", json!({ "userId": me, "grants": {}, "isOwner": false })),
+        ("delete_user", json!({ "userId": me })),
+    ] {
+        match admin(&mut pat, command, args) {
+            Response::Err { sentence, .. } => {
+                assert!(sentence.contains("Another administrator can"), "{command}: {sentence}")
+            }
+            Response::Ok { .. } => panic!("{command} let Pat act on their own account"),
+        }
+    }
+
+    // Another administrator can.
+    let mut sam = session(&fixture, "sam");
+    assert!(admin(&mut sam, "set_user_active", json!({ "userId": me, "isActive": false })).is_ok());
+}
+
+#[test]
+fn anyone_can_change_their_own_password_by_proving_the_current_one() {
+    let fixture = hosted();
+    let mut alex = session(&fixture, "alex"); // no Admin grant at all
+
+    let wrong = admin(&mut alex, "change_own_password", json!({ "currentPassword": "nope", "newPassword": "Newpass12" }));
+    match wrong {
+        Response::Err { sentence, .. } => assert!(sentence.contains("current password"), "{sentence}"),
+        Response::Ok { .. } => panic!("changed a password without proving the current one"),
+    }
+    assert!(admin(&mut alex, "change_own_password", json!({ "currentPassword": "Password1", "newPassword": "Newpass12" })).is_ok());
+
+    let (token, fingerprint) = pair_a_machine(&fixture, "alex again");
+    let mut again = Client::connect(fixture.addr(), fingerprint).unwrap();
+    assert!(again.sign_in(&token, "alex", "Password1").is_err(), "the old password still worked");
+    let mut again = Client::connect(fixture.addr(), fingerprint).unwrap();
+    assert!(again.sign_in(&token, "alex", "Newpass12").is_ok());
+}
+
+#[test]
+fn an_administrator_can_add_a_person_who_can_then_sign_in() {
+    let fixture = hosted();
+    let mut sam = session(&fixture, "sam");
+    let created = admin(
+        &mut sam,
+        "create_user",
+        json!({ "login": "riley", "displayName": "Riley", "password": "Password1",
+                "isOwner": false, "grants": { "money": "write", "reports": "read" } }),
+    );
+    assert!(created.is_ok());
+
+    match admin(&mut sam, "list_users", json!(null)) {
+        Response::Ok { value } => {
+            let riley = value.as_array().unwrap().iter().find(|p| p["login"] == "riley").unwrap();
+            assert_eq!(riley["grants"]["money"], "write");
+            assert!(riley.get("password_hash").is_none(), "a hash must never be listed");
+        }
+        Response::Err { sentence, .. } => panic!("{sentence}"),
+    }
+
+    let mut riley = session(&fixture, "riley");
+    assert!(riley.invoke(Request::new("get_accounts", json!(null))).unwrap().is_ok());
 }

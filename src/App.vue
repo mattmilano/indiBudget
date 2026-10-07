@@ -137,8 +137,8 @@ const isActive = (path: string) => route.path === path;
         class="px-6 py-3 bg-red-600 text-white text-sm flex items-center justify-between gap-4"
       >
         <span>
-          Lost the connection to the computer hosting the budget. Nothing here can be shown or
-          saved until you sign in again.
+          {{ sharing.status.lost_reason ?? 'Lost the connection to the computer hosting the budget.' }}
+          Nothing here can be shown or saved until you sign in again.
         </span>
         <router-link to="/sharing" class="underline font-medium whitespace-nowrap">Sign in again</router-link>
       </div>

@@ -139,7 +139,7 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     let status = status_of(&laptop);
     assert!(status.lost && !status.connected, "the dropped connection is reported");
     let err = account_names(&laptop).expect_err("still refused, not answered locally");
-    assert!(err.contains("lost"), "{err}");
+    assert!(err.contains("sign in again"), "{err}");
 
     // Disconnecting deliberately returns to this computer's own budget.
     disconnect_on(&laptop);
