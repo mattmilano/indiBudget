@@ -1,21 +1,35 @@
 //! Hosting and connecting, driven from the local screens.
 //!
 //! None of these are registered in the boundary registry: they are about *this*
-//! machine — whether it is hosting, which machines it paired, what it is
-//! connected to — and are meaningless or dangerous asked remotely.
+//! machine — whether it is hosting, which host it joined, what it is connected
+//! to — and are meaningless or dangerous asked remotely.
+//!
+//! # Every command here runs off the main thread
+//!
+//! Tauri runs a command that is not `async` on the app's main thread. These
+//! commands wait on the network, and a network can take a long time to say no:
+//! a firewall that silently drops traffic leaves a connection attempt waiting
+//! for a minute or more. On the main thread that wait froze the whole window,
+//! needing a force-quit. So each command is `async` and does its work through
+//! [`off_main_thread`], and the socket itself has timeouts (see `net::client`),
+//! so the wait is both bounded and invisible to the window.
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
 use super::AppState;
 use crate::boundary::registry::{dispatch, BoundaryCtx};
 use crate::boundary::{Actor, BoundaryError, Request, Response};
+use crate::database::repository;
 use crate::net::addresses::{parse_host_address, reachable_addresses, DEFAULT_PORT};
 use crate::net::client::Client;
 use crate::net::host::{self, HostState, RunningHost};
 use crate::net::identity::{Fingerprint, HostIdentity};
+
+/// The settings key under which a joining computer remembers its host.
+const SAVED_HOST_KEY: &str = "joined_host";
 
 /// This machine's part in a shared budget.
 #[derive(Default)]
@@ -24,6 +38,13 @@ pub struct MultiUser {
     state: Mutex<Option<Arc<HostState>>>,
     client: Mutex<Option<Client>>,
     connected_as: Mutex<Option<String>>,
+    /// Set when the connection to a host failed partway through.
+    ///
+    /// While set, requests for budget data are refused rather than answered
+    /// from this computer's own database. Answering locally would quietly show
+    /// a different — usually empty — budget, and look like everything had been
+    /// lost.
+    lost: Mutex<bool>,
 }
 
 impl MultiUser {
@@ -41,6 +62,69 @@ fn db_of(state: &AppState) -> Result<Arc<crate::database::Database>, String> {
     Ok(Arc::clone(guard.as_ref().ok_or("Database not initialized")?))
 }
 
+/// Run `work` on a background thread with the app's state.
+async fn off_main_thread<T, F>(app: AppHandle, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppState) -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || work(&app.state::<AppState>()))
+        .await
+        .map_err(|e| format!("indiBudget hit an internal error: {e}"))?
+}
+
+// ------------------------------------------------------------ remembering
+
+/// What a joining computer remembers about the host it paired with.
+///
+/// Stored in this computer's own database, so a restart needs only a sign-in
+/// rather than a fresh pairing — which would also leave a stale entry in the
+/// host's list of paired computers each time. The device token is the
+/// credential that says "this machine was deliberately added"; it never goes
+/// to the frontend. The password is never stored.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedHost {
+    pub address: String,
+    pub fingerprint: String,
+    pub device_token: String,
+    pub label: String,
+    pub last_login: Option<String>,
+}
+
+/// The part of [`SavedHost`] the screens may see.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SavedHostView {
+    pub address: String,
+    pub fingerprint_groups: String,
+    pub label: String,
+    pub last_login: Option<String>,
+}
+
+fn load_saved_host(state: &AppState) -> Result<Option<SavedHost>, String> {
+    let Ok(db) = db_of(state) else {
+        return Ok(None);
+    };
+    let raw = db
+        .with_connection(|conn| repository::get_setting(conn, SAVED_HOST_KEY))
+        .map_err(|e| e.to_string())?;
+    Ok(raw.and_then(|r| serde_json::from_str(&r).ok()))
+}
+
+fn store_saved_host(state: &AppState, saved: &SavedHost) -> Result<(), String> {
+    let db = db_of(state)?;
+    let raw = serde_json::to_string(saved).map_err(|e| e.to_string())?;
+    db.with_connection(|conn| repository::set_setting(conn, SAVED_HOST_KEY, &raw))
+        .map_err(|e| e.to_string())
+}
+
+fn clear_saved_host(state: &AppState) -> Result<(), String> {
+    let db = db_of(state)?;
+    db.with_connection(|conn| repository::delete_setting(conn, SAVED_HOST_KEY))
+        .map_err(|e| e.to_string())
+}
+
+// ----------------------------------------------------------------- status
+
 #[derive(Debug, Serialize)]
 pub struct HostingStatus {
     pub hosting: bool,
@@ -54,36 +138,59 @@ pub struct HostingStatus {
     pub pairing: bool,
     pub connected: bool,
     pub signed_in_as: Option<String>,
+    /// The host this computer joined, if it has paired with one.
+    pub saved_host: Option<SavedHostView>,
+    /// The connection to the host dropped and has not been re-established.
+    pub lost: bool,
 }
 
-fn status_of(state: &State<AppState>) -> HostingStatus {
-    let running = lock(&state.multi_user.running);
-    let host_state = lock(&state.multi_user.state);
-    let fingerprint = host_state.as_ref().map(|s| s.identity.fingerprint());
-    let addresses = running
-        .as_ref()
-        .map(|r| reachable_addresses(r.addr().port()))
-        .unwrap_or_default();
+pub fn status_of(state: &AppState) -> HostingStatus {
+    let (hosting, addresses) = {
+        let running = lock(&state.multi_user.running);
+        let addresses = running
+            .as_ref()
+            .map(|r| reachable_addresses(r.addr().port()))
+            .unwrap_or_default();
+        (running.is_some(), addresses)
+    };
+    let (fingerprint, pairing) = {
+        let host_state = lock(&state.multi_user.state);
+        (
+            host_state.as_ref().map(|s| s.identity.fingerprint()),
+            host_state.as_ref().map(|s| s.is_pairing()).unwrap_or(false),
+        )
+    };
+    let saved_host = load_saved_host(state).ok().flatten().map(|s| SavedHostView {
+        fingerprint_groups: Fingerprint::from_hex(&s.fingerprint)
+            .map(|f| f.display_groups())
+            .unwrap_or_default(),
+        address: s.address,
+        label: s.label,
+        last_login: s.last_login,
+    });
 
     HostingStatus {
-        hosting: running.is_some(),
+        hosting,
         address: addresses.first().cloned(),
         addresses,
         fingerprint: fingerprint.map(|f| f.to_hex()),
         fingerprint_groups: fingerprint.map(|f| f.display_groups()),
-        pairing: host_state.as_ref().map(|s| s.is_pairing()).unwrap_or(false),
+        pairing,
         connected: lock(&state.multi_user.client).is_some(),
         signed_in_as: lock(&state.multi_user.connected_as).clone(),
+        saved_host,
+        lost: *lock(&state.multi_user.lost),
     }
 }
 
 #[tauri::command]
-pub fn hosting_status(state: State<AppState>) -> HostingStatus {
-    status_of(&state)
+pub async fn hosting_status(app: AppHandle) -> Result<HostingStatus, String> {
+    off_main_thread(app, |state| Ok(status_of(state))).await
 }
 
-#[tauri::command]
-pub fn start_hosting(state: State<AppState>, port: Option<u16>) -> Result<HostingStatus, String> {
+// ---------------------------------------------------------------- hosting
+
+pub fn start_hosting_on(state: &AppState, port: Option<u16>) -> Result<HostingStatus, String> {
     if lock(&state.multi_user.running).is_some() {
         return Err("This computer is already hosting.".into());
     }
@@ -93,7 +200,12 @@ pub fn start_hosting(state: State<AppState>, port: Option<u16>) -> Result<Hostin
             .into());
     }
 
-    let db = db_of(&state)?;
+    let port = port.unwrap_or(DEFAULT_PORT);
+    if port == 0 {
+        return Err("Choose a port between 1 and 65535, or leave it blank for the default.".into());
+    }
+
+    let db = db_of(state)?;
     let identity = db
         .with_connection(|conn| Ok(HostIdentity::load_or_create(conn)))
         .map_err(|e| e.to_string())?
@@ -108,29 +220,35 @@ pub fn start_hosting(state: State<AppState>, port: Option<u16>) -> Result<Hostin
         Arc::clone(&state.shared),
     ));
 
-    let port = port.unwrap_or(DEFAULT_PORT);
-    if port == 0 {
-        return Err("Choose a port between 1 and 65535, or leave it blank for the default.".into());
-    }
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let running = host::start(Arc::clone(&host_state), addr).map_err(|e| e.sentence())?;
+    let running = host::start(Arc::clone(&host_state), SocketAddr::from(([0, 0, 0, 0], port)))
+        .map_err(|e| e.sentence())?;
 
     *lock(&state.multi_user.running) = Some(running);
     *lock(&state.multi_user.state) = Some(host_state);
-    Ok(status_of(&state))
+    Ok(status_of(state))
 }
 
 #[tauri::command]
-pub fn stop_hosting(state: State<AppState>) -> HostingStatus {
-    if let Some(mut running) = lock(&state.multi_user.running).take() {
+pub async fn start_hosting(app: AppHandle, port: Option<u16>) -> Result<HostingStatus, String> {
+    off_main_thread(app, move |state| start_hosting_on(state, port)).await
+}
+
+pub fn stop_hosting_on(state: &AppState) -> HostingStatus {
+    let running = lock(&state.multi_user.running).take();
+    if let Some(mut running) = running {
+        // Also disconnects every computer that had joined.
         running.stop();
     }
     *lock(&state.multi_user.state) = None;
-    status_of(&state)
+    status_of(state)
 }
 
 #[tauri::command]
-pub fn open_pairing(state: State<AppState>) -> Result<String, String> {
+pub async fn stop_hosting(app: AppHandle) -> Result<HostingStatus, String> {
+    off_main_thread(app, |state| Ok(stop_hosting_on(state))).await
+}
+
+pub fn open_pairing_on(state: &AppState) -> Result<String, String> {
     let host_state = lock(&state.multi_user.state);
     Ok(host_state
         .as_ref()
@@ -139,13 +257,22 @@ pub fn open_pairing(state: State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn close_pairing(state: State<AppState>) {
-    if let Some(host_state) = lock(&state.multi_user.state).as_ref() {
-        host_state.close_pairing();
-    }
+pub async fn open_pairing(app: AppHandle) -> Result<String, String> {
+    off_main_thread(app, open_pairing_on).await
 }
 
-// ------------------------------------------------------------ connecting
+#[tauri::command]
+pub async fn close_pairing(app: AppHandle) -> Result<(), String> {
+    off_main_thread(app, |state| {
+        if let Some(host_state) = lock(&state.multi_user.state).as_ref() {
+            host_state.close_pairing();
+        }
+        Ok(())
+    })
+    .await
+}
+
+// ---------------------------------------------------------------- joining
 
 #[derive(Debug, Deserialize)]
 pub struct PairRequest {
@@ -154,15 +281,17 @@ pub struct PairRequest {
     pub label: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct PairedHost {
-    pub device_token: String,
-    pub fingerprint: String,
-    pub fingerprint_groups: String,
-}
-
-#[tauri::command]
-pub fn pair_with_host(request: PairRequest) -> Result<PairedHost, String> {
+/// Pair with a host and remember it.
+///
+/// Saved the moment pairing succeeds rather than after sign-in: the host keeps
+/// only the token's hash, so a token not saved here is gone for good, leaving
+/// an orphaned entry on the host and a computer that has to pair again.
+pub fn pair_on(state: &AppState, request: PairRequest) -> Result<HostingStatus, String> {
+    if lock(&state.multi_user.running).is_some() {
+        return Err("This computer is hosting its own budget. \
+                    Stop hosting before joining another."
+            .into());
+    }
     let addr = parse_host_address(&request.address)?;
 
     let mut client = Client::connect_for_pairing(addr).map_err(|e| e.sentence())?;
@@ -173,51 +302,96 @@ pub fn pair_with_host(request: PairRequest) -> Result<PairedHost, String> {
         .pair(&request.code, &request.label)
         .map_err(|e| e.sentence())?;
 
-    Ok(PairedHost {
-        device_token: token,
-        fingerprint: fingerprint.to_hex(),
-        fingerprint_groups: fingerprint.display_groups(),
-    })
+    store_saved_host(
+        state,
+        &SavedHost {
+            address: addr.to_string(),
+            fingerprint: fingerprint.to_hex(),
+            device_token: token,
+            label: request.label.trim().to_string(),
+            last_login: None,
+        },
+    )?;
+    Ok(status_of(state))
+}
+
+#[tauri::command]
+pub async fn pair_with_host(app: AppHandle, request: PairRequest) -> Result<HostingStatus, String> {
+    off_main_thread(app, move |state| pair_on(state, request)).await
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ConnectRequest {
-    pub address: String,
-    pub fingerprint: String,
-    pub device_token: String,
     pub login: String,
     pub password: String,
+    /// A new address for the remembered host, when its address on the network
+    /// changed. The identity it was paired with still has to match, so this
+    /// cannot be used to reach a different computer.
+    #[serde(default)]
+    pub address: Option<String>,
 }
 
-#[tauri::command]
-pub fn connect_to_host(
-    state: State<AppState>,
-    request: ConnectRequest,
-) -> Result<HostingStatus, String> {
+/// Sign in to the remembered host.
+pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingStatus, String> {
     if lock(&state.multi_user.running).is_some() {
         return Err("This computer is hosting its own budget. \
                     Stop hosting before connecting to another."
             .into());
     }
+    let mut saved = load_saved_host(state)?
+        .ok_or("This computer has not been paired with a host yet. Pair it first.")?;
 
-    let addr = parse_host_address(&request.address)?;
-    let fingerprint = Fingerprint::from_hex(&request.fingerprint).map_err(|e| e.sentence())?;
+    if let Some(address) = request.address.as_deref().filter(|a| !a.trim().is_empty()) {
+        saved.address = parse_host_address(address)?.to_string();
+    }
+    let addr = parse_host_address(&saved.address)?;
+    let fingerprint = Fingerprint::from_hex(&saved.fingerprint).map_err(|e| e.sentence())?;
 
     let mut client = Client::connect(addr, fingerprint).map_err(|e| e.sentence())?;
     let session = client
-        .sign_in(&request.device_token, &request.login, &request.password)
+        .sign_in(&saved.device_token, &request.login, &request.password)
         .map_err(|e| e.sentence())?;
+
+    saved.last_login = Some(request.login.trim().to_string());
+    store_saved_host(state, &saved)?;
 
     *lock(&state.multi_user.client) = Some(client);
     *lock(&state.multi_user.connected_as) = Some(session.display_name);
-    Ok(status_of(&state))
+    *lock(&state.multi_user.lost) = false;
+    Ok(status_of(state))
 }
 
 #[tauri::command]
-pub fn disconnect_from_host(state: State<AppState>) -> HostingStatus {
+pub async fn connect_to_host(
+    app: AppHandle,
+    request: ConnectRequest,
+) -> Result<HostingStatus, String> {
+    off_main_thread(app, move |state| connect_on(state, request)).await
+}
+
+pub fn disconnect_on(state: &AppState) -> HostingStatus {
     *lock(&state.multi_user.client) = None;
     *lock(&state.multi_user.connected_as) = None;
-    status_of(&state)
+    *lock(&state.multi_user.lost) = false;
+    status_of(state)
+}
+
+#[tauri::command]
+pub async fn disconnect_from_host(app: AppHandle) -> Result<HostingStatus, String> {
+    off_main_thread(app, |state| Ok(disconnect_on(state))).await
+}
+
+/// Disconnect and forget the remembered host. Joining again needs a fresh
+/// pairing. The host still lists this computer until someone revokes it there.
+pub fn forget_on(state: &AppState) -> Result<HostingStatus, String> {
+    disconnect_on(state);
+    clear_saved_host(state)?;
+    Ok(status_of(state))
+}
+
+#[tauri::command]
+pub async fn forget_saved_host(app: AppHandle) -> Result<HostingStatus, String> {
+    off_main_thread(app, forget_on).await
 }
 
 // -------------------------------------------------------------- the door
@@ -228,21 +402,17 @@ pub fn disconnect_from_host(state: State<AppState>) -> HostingStatus {
 /// dispatched locally against the same registry, the same holds and the same
 /// news — which is what makes a hold taken here block a laptop, and a change
 /// made on a laptop show up here.
-///
-/// A command the registry does not know is reported as such rather than
-/// guessed at; the frontend falls back to the host-only Tauri command of that
-/// name.
 #[tauri::command]
-pub fn boundary_invoke(
-    state: State<AppState>,
+pub async fn boundary_invoke(
+    app: AppHandle,
     command: String,
     args: serde_json::Value,
 ) -> Result<Response, String> {
-    invoke_on(&state, command, args)
+    off_main_thread(app, move |state| invoke_on(state, command, args)).await
 }
 
-/// The body of `boundary_invoke`, separated from Tauri's `State` so the real
-/// startup sequence can be exercised in tests.
+/// The body of `boundary_invoke`, separated from Tauri so the real startup and
+/// joining sequences can be exercised in tests.
 pub fn invoke_on(
     state: &AppState,
     command: String,
@@ -250,20 +420,38 @@ pub fn invoke_on(
 ) -> Result<Response, String> {
     let request = Request::new(command, args);
 
-    if let Some(client) = lock(&state.multi_user.client).as_mut() {
-        return client.invoke(request).map_err(|e| e.sentence());
-    }
-
-    // Answer "not registered" before asking for the database. Host-only
-    // commands are dispatched directly by the frontend once told they are not
-    // registered — and `init_app`, the command that *opens* the database, is
-    // one of them. Requiring an open database first meant the database could
-    // never be opened: startup failed silently and every later call failed
-    // with it.
+    // Answer "not registered" before anything else. Host-only commands are
+    // dispatched directly by the frontend once told they are not registered —
+    // and `init_app`, the command that *opens* the database, is one of them.
+    // Requiring an open database first meant the database could never be
+    // opened. The registry is identical on every computer, so this answer is
+    // the same one a host would give.
     if !state.registry.contains(&request.command) {
         return Ok(Response::err(BoundaryError::UnknownCommand {
             command: request.command,
         }));
+    }
+
+    {
+        let mut slot = lock(&state.multi_user.client);
+        if let Some(client) = slot.as_mut() {
+            let result = client.invoke(request);
+            if client.is_broken() {
+                // A late reply could now arrive as the answer to the next
+                // request, so this connection is finished.
+                *slot = None;
+                drop(slot);
+                *lock(&state.multi_user.connected_as) = None;
+                *lock(&state.multi_user.lost) = true;
+            }
+            return result.map_err(|e| e.sentence());
+        }
+    }
+
+    if *lock(&state.multi_user.lost) {
+        return Err("The connection to the computer hosting the budget was lost. \
+                    Go to Sharing to sign in again."
+            .into());
     }
 
     let db = db_of(state)?;

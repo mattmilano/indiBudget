@@ -469,7 +469,8 @@ import Icon from '@components/Icon.astro';
           <li>Click <strong>Pair</strong>, then check the identity code shown matches the one on the host.</li>
           <li>Sign in with your login and password.</li>
         </ol>
-        <p>Pairing is a one-time step per computer. After that it only needs a sign-in.</p>
+        <p>Pairing is a one-time step per computer. The computer remembers the host — its address and identity, never your password — so after a restart indiBudget opens on the Sharing screen and only asks you to sign in.</p>
+        <p>If the host's address on your network changes, choose <strong>Host's address changed?</strong> and enter the new one. No new pairing is needed, and the host still has to prove it is the same computer. <strong>Forget this host</strong> removes it from this computer; joining again then needs a fresh pairing code.</p>
         <p>Five wrong codes closes the pairing window. That is deliberate — if it happens, click <strong>Start pairing</strong> on the host for a fresh code rather than retrying the old one.</p>
 
         <h3>People and What They Can Reach</h3>
@@ -703,6 +704,9 @@ import Icon from '@components/Icon.astro';
 
         <h3>A record says someone is editing it, but nobody is</h3>
         <p>A hold is released when its owner saves, closes the screen, or disconnects, and lapses on its own within a minute if their computer vanished mid-edit. Wait a moment and try again.</p>
+
+        <h3>A banner says the connection to the host was lost</h3>
+        <p>The host stopped hosting, went to sleep, or dropped off the network. Until you sign in again, indiBudget shows nothing rather than quietly showing this computer's own budget instead. Once the host is back, sign in from the Sharing screen. Stopping hosting disconnects everyone who had joined.</p>
 
         <h3>Changes are being refused and a banner mentions maintenance</h3>
         <p>An administrator has closed the budget, probably to take a backup. Reading still works. Any administrator can reopen it from the Sharing screen.</p>

@@ -9,11 +9,12 @@
 //! executor, and a dull transport is one that cannot surprise the data.
 
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::frame::{read_frame, write_frame};
 use super::identity::HostIdentity;
@@ -188,6 +189,43 @@ pub struct RunningHost {
     addr: SocketAddr,
     shutdown: Arc<AtomicBool>,
     accept_thread: Option<JoinHandle<()>>,
+    live: Arc<LiveConnections>,
+}
+
+/// Every connection currently being served, so stopping can end them.
+///
+/// Without this, "Stop hosting" only stopped *new* connections: computers that
+/// had already joined went on reading and writing the budget through
+/// connection threads that knew nothing about the stop.
+#[derive(Default)]
+struct LiveConnections {
+    next: AtomicU64,
+    streams: Mutex<HashMap<u64, TcpStream>>,
+}
+
+impl LiveConnections {
+    fn add(&self, stream: &TcpStream) -> Option<u64> {
+        let handle = stream.try_clone().ok()?;
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        self.streams
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id, handle);
+        Some(id)
+    }
+
+    fn remove(&self, id: u64) {
+        self.streams
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&id);
+    }
+
+    fn close_all(&self) {
+        for (_, stream) in self.streams.lock().unwrap_or_else(|p| p.into_inner()).drain() {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
 }
 
 impl RunningHost {
@@ -197,11 +235,22 @@ impl RunningHost {
 
     pub fn stop(&mut self) {
         self.shutdown.store(true, Ordering::SeqCst);
-        // Unblock the accept() by connecting to ourselves once.
-        let _ = TcpStream::connect(self.addr);
+
+        // Unblock the accept() by connecting to ourselves once. The listener is
+        // bound to 0.0.0.0, which Windows refuses as a destination — dialling
+        // it there left accept() blocked and Stop hosting hung forever — so
+        // dial loopback on the same port instead.
+        let wake = if self.addr.ip().is_unspecified() {
+            SocketAddr::from(([127, 0, 0, 1], self.addr.port()))
+        } else {
+            self.addr
+        };
+        let _ = TcpStream::connect_timeout(&wake, Duration::from_secs(2));
         if let Some(handle) = self.accept_thread.take() {
             let _ = handle.join();
         }
+
+        self.live.close_all();
     }
 }
 
@@ -242,6 +291,8 @@ pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, Bou
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let accept_shutdown = Arc::clone(&shutdown);
+    let live = Arc::new(LiveConnections::default());
+    let accept_live = Arc::clone(&live);
 
     let accept_thread = std::thread::spawn(move || {
         for incoming in listener.incoming() {
@@ -251,8 +302,13 @@ pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, Bou
             let Ok(stream) = incoming else { continue };
             let state = Arc::clone(&state);
             let config = Arc::clone(&config);
+            let live = Arc::clone(&accept_live);
             std::thread::spawn(move || {
+                let id = live.add(&stream);
                 serve_connection(state, config, stream);
+                if let Some(id) = id {
+                    live.remove(id);
+                }
             });
         }
     });
@@ -261,6 +317,7 @@ pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, Bou
         addr,
         shutdown,
         accept_thread: Some(accept_thread),
+        live,
     })
 }
 

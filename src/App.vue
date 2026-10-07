@@ -1,11 +1,30 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import UserAgreementModal from './components/UserAgreementModal.vue';
 import { navItems } from './navigation';
+import { useMultiUserStore } from './stores/multiuser';
 import * as api from './services/api';
 
 const route = useRoute();
+const router = useRouter();
+const sharing = useMultiUserStore();
+
+/**
+ * A computer that has joined a host should open on the sign-in screen, not on
+ * its own budget — which is usually empty, and would look as though everything
+ * had been lost.
+ */
+async function openOnTheRightBudget() {
+  try {
+    await sharing.refreshStatus();
+    if (sharing.status.saved_host && !sharing.status.connected && !sharing.status.hosting) {
+      await router.replace('/sharing');
+    }
+  } catch {
+    // Not knowing the sharing state is no reason to block the app opening.
+  }
+}
 
 const sidebarOpen = ref(true);
 const showAgreement = ref(false);
@@ -22,15 +41,17 @@ onMounted(async () => {
       showAgreement.value = true;
     } else {
       appReady.value = true;
+      await openOnTheRightBudget();
     }
   } catch {
     showAgreement.value = true;
   }
 });
 
-function onAgreementAccepted() {
+async function onAgreementAccepted() {
   showAgreement.value = false;
   appReady.value = true;
+  await openOnTheRightBudget();
 }
 
 
@@ -111,6 +132,16 @@ const isActive = (path: string) => route.path === path;
         sidebarOpen ? 'ml-64' : 'ml-20'
       ]"
     >
+      <div
+        v-if="sharing.status.lost && route.path !== '/sharing'"
+        class="px-6 py-3 bg-red-600 text-white text-sm flex items-center justify-between gap-4"
+      >
+        <span>
+          Lost the connection to the computer hosting the budget. Nothing here can be shown or
+          saved until you sign in again.
+        </span>
+        <router-link to="/sharing" class="underline font-medium whitespace-nowrap">Sign in again</router-link>
+      </div>
       <router-view />
     </main>
   </div>

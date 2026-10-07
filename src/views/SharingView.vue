@@ -15,9 +15,31 @@ const joinCode = ref('');
 const joinLabel = ref('This computer');
 const joinLogin = ref('');
 const joinPassword = ref('');
-const paired = ref<{ device_token: string; fingerprint: string; fingerprint_groups: string } | null>(
-  null
-);
+// Only used when the host's address on the network has changed since pairing.
+const changeAddress = ref(false);
+const newAddress = ref('');
+const saved = computed(() => store.status.saved_host);
+
+function signIn() {
+  return run('Could not sign in', () =>
+    store
+      .connectToHost({
+        login: joinLogin.value,
+        password: joinPassword.value,
+        address: changeAddress.value && newAddress.value ? newAddress.value : null,
+      })
+      .then(() => {
+        joinPassword.value = '';
+        changeAddress.value = false;
+        return loadShared();
+      })
+  );
+}
+
+function forgetHost() {
+  if (!window.confirm('Forget this host? Joining it again will need a new pairing code.')) return;
+  return run('Could not forget the host', () => store.forgetSavedHost());
+}
 
 const people = ref<any[]>([]);
 const devices = ref<any[]>([]);
@@ -63,6 +85,7 @@ async function loadShared() {
 
 onMounted(async () => {
   await store.refreshStatus();
+  if (store.status.saved_host?.last_login) joinLogin.value = store.status.saved_host.last_login;
   if (store.isSharing) {
     store.startBeat();
     await loadShared();
@@ -84,6 +107,14 @@ onMounted(async () => {
       class="mb-4 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-sm"
     >
       {{ notice }}
+    </div>
+
+    <div
+      v-if="store.status.lost"
+      class="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-sm"
+    >
+      The connection to the computer hosting the budget was lost — it may have stopped hosting or
+      gone to sleep. Sign in again below once it is back.
     </div>
 
     <div
@@ -119,47 +150,17 @@ onMounted(async () => {
       </div>
 
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700">
-        <h2 class="font-semibold text-gray-900 dark:text-white mb-1">Join a budget</h2>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Connect to a budget hosted on another computer. You will need the address and the pairing
-          code shown there.
-        </p>
-        <input
-          v-model="joinAddress"
-          placeholder="Address shown on the host, e.g. 192.168.1.20:7420"
-          class="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-        />
-        <input
-          v-model="joinCode"
-          placeholder="Pairing code"
-          class="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-        />
-        <input
-          v-model="joinLabel"
-          placeholder="Name for this computer"
-          class="w-full mb-3 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-        />
-        <button
-          v-if="!paired"
-          :disabled="busy || !joinAddress || !joinCode"
-          class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-          @click="
-            run('Could not pair', async () => {
-              paired = await store.pairWithHost(joinAddress, joinCode, joinLabel);
-            })
-          "
-        >
-          Pair
-        </button>
-
-        <div v-else>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
-            Paired. Check this matches the code shown on the other computer:
+        <!-- Already paired with a host: just sign in -->
+        <template v-if="saved">
+          <h2 class="font-semibold text-gray-900 dark:text-white mb-1">Join the shared budget</h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+            This computer is paired with the budget at
+            <code class="px-1 bg-gray-100 dark:bg-gray-800 rounded-sm">{{ saved.address }}</code>.
           </p>
-          <code
-            class="block mb-3 p-2 text-xs bg-gray-100 dark:bg-gray-800 rounded-sm break-all"
-            >{{ paired.fingerprint_groups }}</code
-          >
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            Host identity:
+            <code class="break-all">{{ saved.fingerprint_groups }}</code>
+          </p>
           <input
             v-model="joinLogin"
             placeholder="Your login"
@@ -170,27 +171,78 @@ onMounted(async () => {
             type="password"
             placeholder="Your password"
             class="w-full mb-3 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+            @keyup.enter="joinLogin && joinPassword && !busy && signIn()"
+          />
+          <div v-if="changeAddress" class="mb-3">
+            <input
+              v-model="newAddress"
+              placeholder="New address shown on the host, e.g. 192.168.1.20:7420"
+              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+            />
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Only the address changes. The host still has to prove it is the same computer you
+              paired with.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              :disabled="busy || !joinLogin || !joinPassword"
+              class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              @click="signIn"
+            >
+              {{ busy ? 'Connecting…' : 'Sign in' }}
+            </button>
+            <button
+              v-if="!changeAddress"
+              :disabled="busy"
+              class="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+              @click="
+                changeAddress = true;
+                newAddress = saved.address;
+              "
+            >
+              Host's address changed?
+            </button>
+            <button
+              :disabled="busy"
+              class="text-sm text-red-600 hover:underline"
+              @click="forgetHost"
+            >
+              Forget this host
+            </button>
+          </div>
+        </template>
+
+        <!-- Not paired yet -->
+        <template v-else>
+          <h2 class="font-semibold text-gray-900 dark:text-white mb-1">Join a budget</h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Connect to a budget hosted on another computer. You will need the address and the
+            pairing code shown there. You only pair once; after that, signing in is enough.
+          </p>
+          <input
+            v-model="joinAddress"
+            placeholder="Address shown on the host, e.g. 192.168.1.20:7420"
+            class="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+          />
+          <input
+            v-model="joinCode"
+            placeholder="Pairing code"
+            class="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+          />
+          <input
+            v-model="joinLabel"
+            placeholder="Name for this computer"
+            class="w-full mb-3 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
           />
           <button
-            :disabled="busy || !joinLogin || !joinPassword"
+            :disabled="busy || !joinAddress || !joinCode"
             class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            @click="
-              run('Could not sign in', () =>
-                store
-                  .connectToHost({
-                    address: joinAddress,
-                    fingerprint: paired!.fingerprint,
-                    device_token: paired!.device_token,
-                    login: joinLogin,
-                    password: joinPassword,
-                  })
-                  .then(loadShared)
-              )
-            "
+            @click="run('Could not pair', () => store.pairWithHost(joinAddress, joinCode, joinLabel))"
           >
-            Sign in
+            {{ busy ? 'Pairing…' : 'Pair' }}
           </button>
-        </div>
+        </template>
       </div>
     </section>
 

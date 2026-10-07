@@ -6,12 +6,53 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, Error as TlsError, SignatureScheme, StreamOwned};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use super::frame::{read_frame, write_frame};
+use super::frame::{read_frame, write_frame, FrameError};
 use super::identity::{Fingerprint, PinnedServerCertVerifier};
 use super::pairing::pairing_proof;
 use super::protocol::{ClientMessage, ServerMessage};
 use crate::boundary::{BoundaryError, Request, Response};
+
+/// How long to wait for the host to accept a connection.
+///
+/// Firewalls often drop unwanted traffic rather than refusing it, and then an
+/// operating system will keep trying to connect for a minute or more before
+/// giving up. Nobody should wait that long to learn the address is wrong.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long to wait for any one reply once connected.
+///
+/// Generous next to normal replies, which arrive in milliseconds, but bounded:
+/// a host that went to sleep mid-conversation must produce an error, not an
+/// endless wait.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn waited_too_long(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    )
+}
+
+fn no_answer(addr: SocketAddr) -> BoundaryError {
+    BoundaryError::invalid(format!(
+        "The computer at {addr} did not answer. Check that it is hosting, that it \
+         is awake, and that its firewall allows incoming TCP connections on port {}.",
+        addr.port()
+    ))
+}
+
+/// Turn a failure partway through a conversation into a sentence.
+fn lost(addr: SocketAddr, e: &std::io::Error) -> BoundaryError {
+    if waited_too_long(e) {
+        no_answer(addr)
+    } else {
+        BoundaryError::invalid(format!(
+            "The connection to the computer hosting the budget was lost: {e}"
+        ))
+    }
+}
 
 /// The name presented in the handshake. It is never checked — pinning replaces
 /// hostname verification — but the API requires one.
@@ -91,6 +132,12 @@ impl ServerCertVerifier for CaptureCertVerifier {
 /// A connection to a host.
 pub struct Client {
     tls: StreamOwned<ClientConnection, TcpStream>,
+    addr: SocketAddr,
+    /// Set once a request failed partway. The protocol is strict
+    /// request/reply, so after a timeout a late reply could arrive as the
+    /// answer to the *next* request; the only safe thing is to stop using this
+    /// connection.
+    broken: bool,
     /// The fingerprint actually presented, for a caller that is pairing.
     observed_fingerprint: Option<Fingerprint>,
 }
@@ -114,11 +161,32 @@ fn connect_with_verifier(
         BoundaryError::internal(format!("Could not start a secure connection: {e}"))
     })?;
 
-    let socket = TcpStream::connect(addr).map_err(|e| {
-        BoundaryError::invalid(format!(
-            "Could not reach the computer hosting the budget at {addr}: {e}"
-        ))
+    let socket = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(|e| {
+        if waited_too_long(&e) {
+            no_answer(addr)
+        } else if e.kind() == std::io::ErrorKind::ConnectionRefused {
+            BoundaryError::invalid(format!(
+                "Nothing at {addr} is accepting connections. Check that the other \
+                 computer is hosting, and that the address matches the one on its \
+                 Sharing screen."
+            ))
+        } else {
+            BoundaryError::invalid(format!(
+                "Could not reach the computer hosting the budget at {addr}: {e}"
+            ))
+        }
     })?;
+
+    // Without these, a host that accepts and then goes quiet leaves the reader
+    // waiting forever — which, before commands moved off the main thread,
+    // froze the whole app.
+    for result in [
+        socket.set_read_timeout(Some(REPLY_TIMEOUT)),
+        socket.set_write_timeout(Some(REPLY_TIMEOUT)),
+    ] {
+        result.map_err(|e| BoundaryError::internal(format!("Could not configure the connection: {e}")))?;
+    }
+    let _ = socket.set_nodelay(true);
 
     Ok(StreamOwned::new(conn, socket))
 }
@@ -137,6 +205,8 @@ impl Client {
         let tls = connect_with_verifier(addr, verifier, provider)?;
         Ok(Client {
             tls,
+            addr,
+            broken: false,
             observed_fingerprint: Some(expected),
         })
     }
@@ -152,7 +222,7 @@ impl Client {
         // is asked of the connection.
         tls.conn
             .complete_io(&mut tls.sock)
-            .map_err(|e| BoundaryError::invalid(format!("Could not reach that computer: {e}")))?;
+            .map_err(|e| lost(addr, &e))?;
 
         let captured = verifier.captured().ok_or_else(|| {
             BoundaryError::internal("That computer did not present an identity.")
@@ -160,8 +230,15 @@ impl Client {
 
         Ok(Client {
             tls,
+            addr,
+            broken: false,
             observed_fingerprint: Some(Fingerprint::of_certificate(&captured)),
         })
+    }
+
+    /// Whether a request failed partway, making this connection unusable.
+    pub fn is_broken(&self) -> bool {
+        self.broken
     }
 
     /// The fingerprint of the host on the other end. Store this after a
@@ -183,10 +260,29 @@ impl Client {
     fn exchange(&mut self, message: ClientMessage) -> Result<ServerMessage, BoundaryError> {
         let encoded = serde_json::to_string(&message)
             .map_err(|e| BoundaryError::internal(format!("Could not prepare that request: {e}")))?;
-        write_frame(&mut self.tls, &encoded)
-            .map_err(|e| BoundaryError::invalid(format!("The connection failed: {e}")))?;
-        let raw = read_frame(&mut self.tls)
-            .map_err(|e| BoundaryError::invalid(format!("The connection failed: {e}")))?;
+        if self.broken {
+            return Err(BoundaryError::invalid(
+                "The connection to the computer hosting the budget was lost. Sign in again.",
+            ));
+        }
+        let addr = self.addr;
+        let fail = |client: &mut Client, e: FrameError| {
+            client.broken = true;
+            match e {
+                FrameError::Io(io) => lost(addr, &io),
+                FrameError::Truncated => BoundaryError::invalid(
+                    "The computer hosting the budget closed the connection.",
+                ),
+                other => BoundaryError::invalid(format!("The connection failed: {other}")),
+            }
+        };
+        if let Err(e) = write_frame(&mut self.tls, &encoded) {
+            return Err(fail(self, e));
+        }
+        let raw = match read_frame(&mut self.tls) {
+            Ok(raw) => raw,
+            Err(e) => return Err(fail(self, e)),
+        };
         serde_json::from_str(&raw)
             .map_err(|e| BoundaryError::internal(format!("Could not read the reply: {e}")))
     }

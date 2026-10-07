@@ -29,6 +29,7 @@ pub fn run() {
             commands::multiuser::pair_with_host,
             commands::multiuser::connect_to_host,
             commands::multiuser::disconnect_from_host,
+            commands::multiuser::forget_saved_host,
             commands::multiuser::boundary_invoke,
             commands::init_app,
             commands::get_database_path,

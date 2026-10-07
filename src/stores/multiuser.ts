@@ -23,6 +23,17 @@ export interface HostingStatus {
   pairing: boolean;
   connected: boolean;
   signed_in_as: string | null;
+  /** The host this computer paired with, remembered across restarts. */
+  saved_host: SavedHost | null;
+  /** The connection to the host dropped and has not been re-established. */
+  lost: boolean;
+}
+
+export interface SavedHost {
+  address: string;
+  fingerprint_groups: string;
+  label: string;
+  last_login: string | null;
 }
 
 export interface Notice {
@@ -53,6 +64,8 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     pairing: false,
     connected: false,
     signed_in_as: null,
+    saved_host: null,
+    lost: false,
   });
 
   const pairingCode = ref<string | null>(null);
@@ -122,19 +135,24 @@ export const useMultiUserStore = defineStore('multiuser', () => {
   }
 
   async function pairWithHost(address: string, code: string, label: string) {
-    return invokeLocal<{
-      device_token: string;
-      fingerprint: string;
-      fingerprint_groups: string;
-    }>('pair_with_host', { request: { address, code, label } });
+    error.value = null;
+    try {
+      // The host is remembered on the Rust side, token included; nothing
+      // secret comes back to the page.
+      status.value = await invokeLocal<HostingStatus>('pair_with_host', {
+        request: { address, code, label },
+      });
+    } catch (e) {
+      error.value = String(e);
+      throw e;
+    }
   }
 
   async function connectToHost(request: {
-    address: string;
-    fingerprint: string;
-    device_token: string;
     login: string;
     password: string;
+    /** Only when the host's address changed since pairing. */
+    address?: string | null;
   }) {
     error.value = null;
     try {
@@ -146,6 +164,12 @@ export const useMultiUserStore = defineStore('multiuser', () => {
       error.value = String(e);
       throw e;
     }
+  }
+
+  async function forgetSavedHost() {
+    status.value = await invokeLocal<HostingStatus>('forget_saved_host');
+    setConnectedToHost(false);
+    stopBeat();
   }
 
   async function disconnect() {
@@ -193,7 +217,11 @@ export const useMultiUserStore = defineStore('multiuser', () => {
       }
       result.notices.forEach(apply);
     } catch {
-      // A missed beat is not worth surfacing; the next one will catch up.
+      // One missed beat is not worth a message, but it may mean the host has
+      // gone. Re-read the status: if the connection was lost, the Sharing
+      // screen and the banner say so, and the beat stops asking.
+      await refreshStatus().catch(() => {});
+      if (status.value.lost) stopBeat();
     }
   }
 
@@ -234,6 +262,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     pairWithHost,
     connectToHost,
     disconnect,
+    forgetSavedHost,
     catchUp,
     startBeat,
     stopBeat,

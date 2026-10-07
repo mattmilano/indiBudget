@@ -1046,3 +1046,35 @@ fn hosting_on_a_port_already_in_use_says_so() {
     let err = host::start(state, taken).err().expect("the port is taken");
     assert!(err.sentence().contains("already in use"), "{}", err.sentence());
 }
+
+// ------------------------------------------------------ a host that goes quiet
+
+/// Run `f` on its own thread and fail rather than hang if it outlives `limit`.
+fn within<T: Send + 'static>(limit: std::time::Duration, f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(limit)
+        .unwrap_or_else(|_| panic!("still waiting after {limit:?} — this would freeze the app"))
+}
+
+/// Reported as "the whole app hangs, requiring a force-quit". Something that
+/// accepts the connection and then never answers — a host that went to sleep,
+/// the wrong program on that port — used to leave the joining computer waiting
+/// forever, and the wait happened on the app's main thread.
+#[test]
+fn a_host_that_accepts_but_never_answers_gives_up_with_a_sentence() {
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = silent.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let held: Vec<_> = silent.incoming().flatten().collect(); // accept, say nothing
+        drop(held);
+    });
+
+    let outcome = within(std::time::Duration::from_secs(60), move || {
+        Client::connect_for_pairing(addr).map(|_| ())
+    });
+    let err = outcome.expect_err("a silent host must not count as connected");
+    assert!(err.sentence().contains("did not answer"), "{}", err.sentence());
+}
