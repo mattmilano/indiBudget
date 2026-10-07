@@ -989,3 +989,60 @@ fn closing_twice_leaves_the_first_closer_named_and_makes_no_second_announcement(
         "a no-op close announced itself"
     );
 }
+
+// ------------------------------------------- the address people are shown
+
+/// The bug that reached a real user: hosting listened on `0.0.0.0` and the
+/// Sharing screen displayed that, so the joining computer dialled itself and got
+/// "connection refused". Every earlier test here dialled 127.0.0.1 directly and
+/// so never exercised the address a person is actually given.
+#[test]
+fn pairing_through_the_address_the_host_displays_works() {
+    use indibudget_lib::net::addresses::{parse_host_address, reachable_addresses};
+
+    let base = hosted();
+    // A second host on all interfaces, the way the app starts one.
+    let state = Arc::new(HostState::new(
+        Arc::clone(&base.db),
+        Arc::new(test_registry()),
+        base.state.identity.clone(),
+        Arc::new(indibudget_lib::boundary::SharedState::new()),
+    ));
+    let running = host::start(Arc::clone(&state), "0.0.0.0:0".parse().unwrap()).unwrap();
+    let port = running.addr().port();
+
+    // What the screen would show, as a person would type it on the other machine.
+    let shown = reachable_addresses(port);
+    for address in &shown {
+        assert!(!address.starts_with("0.0.0.0"), "the listening address was offered: {address}");
+    }
+    let Some(address) = shown.first() else {
+        eprintln!("no network interface in this environment; skipping the dial");
+        return;
+    };
+
+    eprintln!("dialling the displayed address {address}");
+    let addr = parse_host_address(address).expect("the displayed address parses");
+    let code = state.open_pairing();
+    let mut client = Client::connect_for_pairing(addr).expect("the displayed address is reachable");
+    client.pair(&code, "Laptop").expect("pairing through the displayed address");
+
+    // And what the user typed before the fix is refused with an explanation
+    // rather than a bare "connection refused".
+    let err = parse_host_address(&format!("0.0.0.0:{port}")).unwrap_err();
+    assert!(err.contains("Others can connect to"), "{err}");
+}
+
+#[test]
+fn hosting_on_a_port_already_in_use_says_so() {
+    let first = hosted();
+    let taken = first.addr();
+    let state = Arc::new(HostState::new(
+        Arc::clone(&first.db),
+        Arc::new(test_registry()),
+        first.state.identity.clone(),
+        Arc::new(indibudget_lib::boundary::SharedState::new()),
+    ));
+    let err = host::start(state, taken).err().expect("the port is taken");
+    assert!(err.sentence().contains("already in use"), "{}", err.sentence());
+}

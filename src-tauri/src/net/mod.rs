@@ -1,5 +1,6 @@
 //! The multi-user transport.
 
+pub mod addresses;
 pub mod frame;
 pub mod identity;
 pub mod pairing;

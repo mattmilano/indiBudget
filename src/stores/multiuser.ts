@@ -16,6 +16,8 @@ export const NEWS_BEAT_MS = 5000;
 export interface HostingStatus {
   hosting: boolean;
   address: string | null;
+  /** Where other computers can reach this one, best first. */
+  addresses: string[];
   fingerprint: string | null;
   fingerprint_groups: string | null;
   pairing: boolean;
@@ -45,6 +47,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
   const status = ref<HostingStatus>({
     hosting: false,
     address: null,
+    addresses: [],
     fingerprint: null,
     fingerprint_groups: null,
     pairing: false,

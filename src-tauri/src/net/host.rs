@@ -225,8 +225,17 @@ fn tls_config(identity: &HostIdentity) -> Result<Arc<ServerConfig>, BoundaryErro
 /// Start listening. `bind` may use port 0 to let the OS choose.
 pub fn start(state: Arc<HostState>, bind: SocketAddr) -> Result<RunningHost, BoundaryError> {
     let config = tls_config(&state.identity)?;
-    let listener = TcpListener::bind(bind)
-        .map_err(|e| BoundaryError::internal(format!("Could not start hosting on {bind}: {e}")))?;
+    let listener = TcpListener::bind(bind).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            BoundaryError::invalid(format!(
+                "Port {} is already in use on this computer — indiBudget may already be \
+                 hosting in another window. Stop that, or choose a different port.",
+                bind.port()
+            ))
+        } else {
+            BoundaryError::internal(format!("Could not start hosting on port {}: {e}", bind.port()))
+        }
+    })?;
     let addr = listener
         .local_addr()
         .map_err(|e| BoundaryError::internal(format!("Could not read the hosting address: {e}")))?;

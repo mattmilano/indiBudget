@@ -453,7 +453,7 @@ import Icon from '@components/Icon.astro';
         <h3>Hosting a Budget</h3>
         <ol>
           <li>Go to <strong>Sharing</strong> and click <strong>Start hosting</strong>.</li>
-          <li>Leave the port blank unless you have a reason to set one; indiBudget picks a free one.</li>
+          <li>Leave the port blank to use the standard one, <strong>7420</strong>. Only change it if another program already uses that port.</li>
           <li>The screen shows the address others should connect to, and an <strong>identity code</strong>.</li>
         </ol>
         <p>The identity code is worth understanding. It identifies this specific computer. When someone connects, their screen shows the same code — reading it aloud and checking the two match confirms they reached your machine and not something pretending to be it.</p>
@@ -691,7 +691,8 @@ import Icon from '@components/Icon.astro';
           <li>The host is awake, running indiBudget, and still shows <strong>Hosting</strong> on its Sharing screen.</li>
           <li>Both computers are on the same network. A phone hotspot or a guest network will not reach the host.</li>
           <li>The address matches what the host's Sharing screen shows, including the number after the colon.</li>
-          <li>The host's firewall is not blocking the port.</li>
+          <li>The host's firewall allows incoming <strong>TCP</strong> connections on port <strong>7420</strong>, or whichever port you chose. A rule that allows the indiBudget program rather than a port also works.</li>
+          <li>You typed the address listed under <em>Others can connect to</em>, such as <code>192.168.1.20:7420</code>. An address starting <code>0.0.0.0</code> or <code>127.</code> only ever reaches the computer you are typing on.</li>
         </ul>
 
         <h3>Pairing says the code did not match, and I am sure it is right</h3>

@@ -12,6 +12,7 @@ use tauri::State;
 use super::AppState;
 use crate::boundary::registry::{dispatch, BoundaryCtx};
 use crate::boundary::{Actor, BoundaryError, Request, Response};
+use crate::net::addresses::{parse_host_address, reachable_addresses, DEFAULT_PORT};
 use crate::net::client::Client;
 use crate::net::host::{self, HostState, RunningHost};
 use crate::net::identity::{Fingerprint, HostIdentity};
@@ -43,7 +44,11 @@ fn db_of(state: &AppState) -> Result<Arc<crate::database::Database>, String> {
 #[derive(Debug, Serialize)]
 pub struct HostingStatus {
     pub hosting: bool,
+    /// The first of `addresses`, for places that show only one.
     pub address: Option<String>,
+    /// Where other computers can reach this one. Never the `0.0.0.0` the
+    /// listener binds to, which a joining computer would read as itself.
+    pub addresses: Vec<String>,
     pub fingerprint: Option<String>,
     pub fingerprint_groups: Option<String>,
     pub pairing: bool,
@@ -55,10 +60,15 @@ fn status_of(state: &State<AppState>) -> HostingStatus {
     let running = lock(&state.multi_user.running);
     let host_state = lock(&state.multi_user.state);
     let fingerprint = host_state.as_ref().map(|s| s.identity.fingerprint());
+    let addresses = running
+        .as_ref()
+        .map(|r| reachable_addresses(r.addr().port()))
+        .unwrap_or_default();
 
     HostingStatus {
         hosting: running.is_some(),
-        address: running.as_ref().map(|r| r.addr().to_string()),
+        address: addresses.first().cloned(),
+        addresses,
         fingerprint: fingerprint.map(|f| f.to_hex()),
         fingerprint_groups: fingerprint.map(|f| f.display_groups()),
         pairing: host_state.as_ref().map(|s| s.is_pairing()).unwrap_or(false),
@@ -98,9 +108,11 @@ pub fn start_hosting(state: State<AppState>, port: Option<u16>) -> Result<Hostin
         Arc::clone(&state.shared),
     ));
 
-    let addr: SocketAddr = format!("0.0.0.0:{}", port.unwrap_or(0))
-        .parse()
-        .map_err(|_| "That is not a usable port.".to_string())?;
+    let port = port.unwrap_or(DEFAULT_PORT);
+    if port == 0 {
+        return Err("Choose a port between 1 and 65535, or leave it blank for the default.".into());
+    }
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let running = host::start(Arc::clone(&host_state), addr).map_err(|e| e.sentence())?;
 
     *lock(&state.multi_user.running) = Some(running);
@@ -151,9 +163,7 @@ pub struct PairedHost {
 
 #[tauri::command]
 pub fn pair_with_host(request: PairRequest) -> Result<PairedHost, String> {
-    let addr: SocketAddr = request.address.parse().map_err(|_| {
-        "That does not look like an address. It should be like 192.168.1.20:7420".to_string()
-    })?;
+    let addr = parse_host_address(&request.address)?;
 
     let mut client = Client::connect_for_pairing(addr).map_err(|e| e.sentence())?;
     let fingerprint = client
@@ -190,10 +200,7 @@ pub fn connect_to_host(
             .into());
     }
 
-    let addr: SocketAddr = request
-        .address
-        .parse()
-        .map_err(|_| "That does not look like an address.".to_string())?;
+    let addr = parse_host_address(&request.address)?;
     let fingerprint = Fingerprint::from_hex(&request.fingerprint).map_err(|e| e.sentence())?;
 
     let mut client = Client::connect(addr, fingerprint).map_err(|e| e.sentence())?;

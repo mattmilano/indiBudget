@@ -23,6 +23,11 @@ const people = ref<any[]>([]);
 const devices = ref<any[]>([]);
 const closedBy = ref<string | null>(null);
 
+const hostingPort = computed(() => {
+  const first = store.status.addresses[0] ?? '';
+  return first.split(':').pop() || '7420';
+});
+
 const mode = computed(() => {
   if (store.status.connected) return 'connected';
   if (store.status.hosting) return 'hosting';
@@ -101,7 +106,7 @@ onMounted(async () => {
         <input
           v-model.number="port"
           type="number"
-          placeholder="Choose automatically"
+          placeholder="7420"
           class="w-full mb-3 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
         />
         <button
@@ -121,7 +126,7 @@ onMounted(async () => {
         </p>
         <input
           v-model="joinAddress"
-          placeholder="192.168.1.20:7420"
+          placeholder="Address shown on the host, e.g. 192.168.1.20:7420"
           class="w-full mb-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
         />
         <input
@@ -195,9 +200,24 @@ onMounted(async () => {
         <div class="flex items-start justify-between gap-4">
           <div>
             <h2 class="font-semibold text-gray-900 dark:text-white">Hosting</h2>
-            <p class="text-sm text-gray-700 dark:text-gray-300 mt-1">
+            <div v-if="store.status.addresses.length" class="text-sm text-gray-700 dark:text-gray-300 mt-1">
               Others can connect to
-              <code class="px-1 bg-white dark:bg-gray-800 rounded-sm">{{ store.status.address }}</code>
+              <code class="px-1 bg-white dark:bg-gray-800 rounded-sm">{{ store.status.addresses[0] }}</code>
+              <p v-if="store.status.addresses.length > 1" class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                This computer has more than one network connection. If that address
+                does not work, try
+                <template v-for="(a, i) in store.status.addresses.slice(1)" :key="a">
+                  <span v-if="i > 0">, </span><code class="px-1 bg-white dark:bg-gray-800 rounded-sm">{{ a }}</code>
+                </template>.
+              </p>
+            </div>
+            <p v-else class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+              This computer does not seem to be connected to a network, so others
+              cannot reach it yet.
+            </p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">
+              If a firewall is running here, allow incoming TCP connections on port
+              {{ hostingPort }}.
             </p>
             <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">
               Identity code — read this out to confirm they reached the right computer:
