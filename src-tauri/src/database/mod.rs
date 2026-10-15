@@ -1,3 +1,4 @@
+pub mod location;
 pub mod migrations;
 pub mod repository;
 
@@ -179,7 +180,17 @@ impl Drop for Database {
     }
 }
 
+/// Set to a folder to keep the budget there instead of the usual data folder.
+///
+/// For a computer whose data folder is on a network drive or inside a synced
+/// folder (see [`location`]), so it can keep the budget on a local disk.
+pub const DATA_DIR_VAR: &str = "INDIBUDGET_DATA_DIR";
+
 pub fn get_database_path() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DATA_DIR_VAR).filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir).join("indibudget.db");
+    }
+
     // Use simple "indibudget" naming scheme across all platforms
     // On Linux: ~/.local/share/indibudget/
     // On macOS: ~/Library/Application Support/indibudget/

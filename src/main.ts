@@ -24,16 +24,19 @@ initApp()
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);
-    // A second window on the same budget is refused by the lock beside the
-    // database. Say so plainly rather than mounting a screen that cannot load.
-    if (String(err).includes('already open in another window')) {
+    // indiBudget declined to open the budget: another window already has it,
+    // or it is kept on a network drive or in a synced folder. Say why plainly
+    // rather than mounting screens that cannot load.
+    const refused =
+      typeof err === 'object' && err !== null && (err as { kind?: string }).kind === 'refused';
+    if (refused) {
       const root = document.getElementById('app');
       if (root) {
         const box = document.createElement('div');
         box.className = 'min-h-screen flex items-center justify-center p-8 bg-gray-50 dark:bg-gray-900';
         const text = document.createElement('p');
-        text.className = 'max-w-md text-center text-gray-800 dark:text-gray-100';
-        text.textContent = String(err);
+        text.className = 'max-w-xl text-center leading-relaxed text-gray-800 dark:text-gray-100';
+        text.textContent = (err as { message: string }).message;
         box.appendChild(text);
         root.replaceChildren(box);
       }

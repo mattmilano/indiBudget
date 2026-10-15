@@ -75,6 +75,29 @@ fn validate_write_path(path: &str) -> Result<PathBuf, String> {
 
 pub mod multiuser;
 
+/// Why the budget could not be opened at startup.
+///
+/// Sent to the window as `{ kind, message }`, so it can tell a deliberate
+/// refusal — which deserves a page of its own explaining what to do — from
+/// something that simply went wrong.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InitError {
+    /// indiBudget will not open it here: already open in another window, or
+    /// kept somewhere SQLite cannot keep it safely.
+    Refused { message: String },
+    /// Opening it failed.
+    Failed { message: String },
+}
+
+impl std::fmt::Display for InitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitError::Refused { message } | InitError::Failed { message } => f.write_str(message),
+        }
+    }
+}
+
 pub struct AppState {
     pub db: Mutex<Option<std::sync::Arc<Database>>>,
     pub encryption: Mutex<Option<EncryptionService>>,
@@ -96,7 +119,7 @@ impl AppState {
         }
     }
 
-    pub fn init_database(&self) -> Result<(), String> {
+    pub fn init_database(&self) -> Result<(), InitError> {
         // Already open: a reloaded window asks again, and opening a second
         // time would be refused by this window's own lock on the file.
         if self
@@ -108,7 +131,17 @@ impl AppState {
             return Ok(());
         }
         let db_path = database::get_database_path();
-        let db = Database::new(db_path.clone()).map_err(|e| e.to_string())?;
+        // Before the file is touched: opening it is already enough to start
+        // a sync service copying it.
+        if let Some(risk) = database::location::assess(&db_path) {
+            return Err(InitError::Refused {
+                message: database::location::refusal(&db_path, &risk),
+            });
+        }
+        let db = Database::new(db_path.clone()).map_err(|e| match e {
+            DatabaseError::AlreadyOpen => InitError::Refused { message: e.to_string() },
+            other => InitError::Failed { message: other.to_string() },
+        })?;
 
         // Lock mutex, recovering from poison if a previous thread panicked
         let mut db_guard = self
@@ -120,7 +153,8 @@ impl AppState {
 
         // Initialize encryption service
         let data_dir = db_path.parent().unwrap_or(&db_path).to_path_buf();
-        let encryption = EncryptionService::new(data_dir).map_err(|e| e.to_string())?;
+        let encryption =
+            EncryptionService::new(data_dir).map_err(|e| InitError::Failed { message: e.to_string() })?;
 
         let mut enc_guard = self
             .encryption
@@ -190,7 +224,7 @@ where
 
 // Initialization
 #[tauri::command]
-pub fn init_app(state: State<AppState>) -> Result<(), String> {
+pub fn init_app(state: State<AppState>) -> Result<(), InitError> {
     state.init_database()
 }
 

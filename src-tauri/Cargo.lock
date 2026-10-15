@@ -2217,6 +2217,7 @@ dependencies = [
  "hex",
  "if-addrs",
  "keyring",
+ "libc",
  "mdns-sd",
  "rand 0.8.5",
  "rcgen",

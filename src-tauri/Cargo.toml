@@ -55,3 +55,7 @@ if-addrs = "0.15"
 keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "crypto-rust", "async-io"] }
 mdns-sd = "0.21.5"
 gethostname = "1.1.0"
+
+# Asking macOS whether the budget's folder is on a local disk (statfs).
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
