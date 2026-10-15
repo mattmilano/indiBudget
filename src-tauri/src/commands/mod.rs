@@ -75,6 +75,18 @@ fn validate_write_path(path: &str) -> Result<PathBuf, String> {
 
 pub mod multiuser;
 
+/// Where the budget is kept, if that is a risky place, and the warning has not
+/// been dismissed.
+#[tauri::command]
+pub fn get_location_warning(state: State<AppState>) -> Option<String> {
+    state.location_warning()
+}
+
+#[tauri::command]
+pub fn dismiss_location_warning(state: State<AppState>) -> Result<(), String> {
+    state.dismiss_location_warning()
+}
+
 /// Why the budget could not be opened at startup.
 ///
 /// Sent to the window as `{ kind, message }`, so it can tell a deliberate
@@ -83,8 +95,7 @@ pub mod multiuser;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InitError {
-    /// indiBudget will not open it here: already open in another window, or
-    /// kept somewhere SQLite cannot keep it safely.
+    /// indiBudget will not open it: another window already has it open.
     Refused { message: String },
     /// Opening it failed.
     Failed { message: String },
@@ -106,7 +117,22 @@ pub struct AppState {
     pub shared: std::sync::Arc<crate::boundary::SharedState>,
     pub registry: std::sync::Arc<crate::boundary::registry::Registry>,
     pub multi_user: multiuser::MultiUser,
+    /// Why the budget's folder is a risky place to keep it, when it is — see
+    /// `database::location`. Shown as a warning the person can dismiss.
+    location_risk: Mutex<Option<LocationWarning>>,
 }
+
+/// A risky place the budget was opened from, and the sentence about it.
+#[derive(Debug, Clone)]
+struct LocationWarning {
+    /// Remembered on dismissal, so the warning comes back if the budget is
+    /// later found somewhere else risky — but not every time the app opens.
+    key: String,
+    message: String,
+}
+
+/// The setting holding the dismissed warning's key.
+const LOCATION_DISMISSED_KEY: &str = "location_warning_dismissed";
 
 impl AppState {
     pub fn new() -> Self {
@@ -116,7 +142,43 @@ impl AppState {
             shared: std::sync::Arc::new(crate::boundary::SharedState::new()),
             registry: std::sync::Arc::new(crate::boundary::commands::build_registry()),
             multi_user: multiuser::MultiUser::new(),
+            location_risk: Mutex::new(None),
         }
+    }
+
+    /// The warning about where the budget is kept, unless it was dismissed.
+    pub fn location_warning(&self) -> Option<String> {
+        let warning = self
+            .location_risk
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()?;
+        let db = self.db.lock().unwrap_or_else(|p| p.into_inner()).clone()?;
+        let dismissed = db
+            .with_connection(|conn| repository::get_setting(conn, LOCATION_DISMISSED_KEY))
+            .ok()
+            .flatten();
+        (dismissed.as_deref() != Some(warning.key.as_str())).then_some(warning.message)
+    }
+
+    /// Stop showing the warning for this place.
+    pub fn dismiss_location_warning(&self) -> Result<(), String> {
+        let Some(warning) = self
+            .location_risk
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+        else {
+            return Ok(());
+        };
+        let db = self
+            .db
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+            .ok_or("Database not initialized")?;
+        db.with_connection(|conn| repository::set_setting(conn, LOCATION_DISMISSED_KEY, &warning.key))
+            .map_err(|e| e.to_string())
     }
 
     pub fn init_database(&self) -> Result<(), InitError> {
@@ -131,13 +193,13 @@ impl AppState {
             return Ok(());
         }
         let db_path = database::get_database_path();
-        // Before the file is touched: opening it is already enough to start
-        // a sync service copying it.
-        if let Some(risk) = database::location::assess(&db_path) {
-            return Err(InitError::Refused {
-                message: database::location::refusal(&db_path, &risk),
+        // Opened all the same — refusing would lock someone out of their own
+        // budget over a risk — but the person is told, and can dismiss it.
+        *self.location_risk.lock().unwrap_or_else(|p| p.into_inner()) =
+            database::location::assess(&db_path).map(|risk| LocationWarning {
+                key: format!("{}|{risk:?}", db_path.display()),
+                message: database::location::warning(&db_path, &risk),
             });
-        }
         let db = Database::new(db_path.clone()).map_err(|e| match e {
             DatabaseError::AlreadyOpen => InitError::Refused { message: e.to_string() },
             other => InitError::Failed { message: other.to_string() },

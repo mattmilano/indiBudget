@@ -737,8 +737,9 @@ import Icon from '@components/Icon.astro';
         <h3>indiBudget says it is already open in another window</h3>
         <p>Only one indiBudget window can have the budget open at a time on a computer — two would each keep their own idea of who is editing what. Switch to the window that is already open. If you cannot find one, it may still be closing; wait a moment and try again.</p>
 
-        <h3>indiBudget will not open a budget on a network drive or in a synced folder</h3>
-        <p>indiBudget refuses to keep its database on a network drive (a shared folder on another computer) or inside a folder that Dropbox, OneDrive, iCloud Drive, Google Drive or a similar service keeps in sync. Those are places where the file can be copied while indiBudget is writing to it, which is how budgets get corrupted — often in a way nobody notices for weeks.</p>
+        <h3>A warning says the budget is on a network drive or in a synced folder</h3>
+        <p>indiBudget warns when its database is on a network drive (a shared folder on another computer) or inside a folder that Dropbox, OneDrive, iCloud Drive, Google Drive or a similar service keeps in sync. Those are places where the file can be copied while indiBudget is writing to it, which is how budgets get corrupted — often in a way nobody notices for weeks.</p>
+        <p>Your budget still opens and works. <strong>Dismiss</strong> hides the warning for that location; it comes back only if the budget is later found somewhere else risky. Dismissing it does not make the location safe, so it is worth moving the budget when you can.</p>
         <p>This usually only happens when a computer's personal folders are kept on a server, as some workplaces arrange, or when the indiBudget folder has been moved into a synced folder. To share a budget between computers, use <a href="#sharing">Sharing</a> instead: one computer keeps the budget on its own disk and the others connect to it.</p>
         <p>To keep your budget in a different folder on this computer, set <code>INDIBUDGET_DATA_DIR</code> to a folder on a local disk:</p>
         <ul>

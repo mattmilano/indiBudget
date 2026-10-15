@@ -47,6 +47,8 @@ pub fn run() {
             commands::multiuser::boundary_invoke,
             commands::init_app,
             commands::get_database_path,
+            commands::get_location_warning,
+            commands::dismiss_location_warning,
             commands::get_transaction_count,
             // Accounts
             commands::create_account,

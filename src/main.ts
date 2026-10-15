@@ -24,9 +24,8 @@ initApp()
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);
-    // indiBudget declined to open the budget: another window already has it,
-    // or it is kept on a network drive or in a synced folder. Say why plainly
-    // rather than mounting screens that cannot load.
+    // indiBudget declined to open the budget because another window already
+    // has it. Say so plainly rather than mounting screens that cannot load.
     const refused =
       typeof err === 'object' && err !== null && (err as { kind?: string }).kind === 'refused';
     if (refused) {

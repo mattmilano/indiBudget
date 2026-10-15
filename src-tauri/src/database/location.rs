@@ -1,4 +1,4 @@
-//! Refusing to keep the budget somewhere SQLite cannot keep it safely.
+//! Warning when the budget is kept somewhere SQLite cannot keep it safely.
 //!
 //! SQLite relies on the operating system's file locks to stop two writers
 //! colliding. On a network drive (SMB, NFS, AFP, WebDAV) those locks are often
@@ -8,7 +8,9 @@
 //! over it. Either way is how budgets get corrupted, and the damage usually
 //! shows up weeks later, far from the cause.
 //!
-//! So indiBudget refuses to open its database in such a place, and says why.
+//! So indiBudget warns when its database is in such a place, and says why. It
+//! is a warning rather than a refusal: the location is fixed, and refusing
+//! would lock someone out of their own budget until they knew how to move it.
 //! Sharing a budget between computers is what hosting is for: one computer
 //! keeps the file on its own disk and the others connect to it.
 //!
@@ -29,19 +31,19 @@ pub enum Risk {
     CloudSync { service: String },
 }
 
-/// The sentence shown instead of the budget.
-pub fn refusal(path: &Path, risk: &Risk) -> String {
+/// The warning shown over the budget.
+pub fn warning(path: &Path, risk: &Risk) -> String {
     let place = match risk {
         Risk::Network { kind } => format!("on a network drive ({kind})"),
         Risk::CloudSync { service } => format!("in a folder that {service} keeps in sync"),
     };
     format!(
-        "indiBudget will not open your budget at {} because it is {place}. \
-         The database can be corrupted when it is kept there: the network or the \
-         sync service can copy it while indiBudget is writing to it. \
+        "Your budget is stored at {} which is {place}. \
+         It can be corrupted there, because the network or the sync service can \
+         copy the file while indiBudget is writing to it. \
          To share one budget between computers, keep it on one computer's own disk \
-         and connect the others from Sharing. To keep your budget somewhere else on \
-         this computer, set INDIBUDGET_DATA_DIR to a folder on a local disk and start \
+         and connect the others from Sharing. To keep it somewhere else on this \
+         computer, set INDIBUDGET_DATA_DIR to a folder on a local disk and start \
          indiBudget again.",
         path.display()
     )
@@ -101,17 +103,23 @@ fn network_by_name(path: &Path) -> Option<Risk> {
 
 /// Folder names the sync services create, compared whole and ignoring case.
 fn sync_service_by_name(path: &Path) -> Option<String> {
+    // A specific service beats the generic macOS folder they all live in.
+    let mut generic = None;
     for name in components_lower(path) {
         let service = match name.as_str() {
             "dropbox" => "Dropbox",
             n if n.starts_with("dropbox (") => "Dropbox",
             "onedrive" => "OneDrive",
-            n if n.starts_with("onedrive - ") => "OneDrive",
+            n if n.starts_with("onedrive - ") || n.starts_with("onedrive-") => "OneDrive",
             "google drive" | "googledrive" | "my drive" => "Google Drive",
+            n if n.starts_with("googledrive-") => "Google Drive",
             "icloud drive" | "icloud~drive" | "mobile documents" | "com~apple~clouddocs" => "iCloud Drive",
             // macOS keeps every File Provider service here: Dropbox, OneDrive,
             // Google Drive, Box and more.
-            "cloudstorage" => "a cloud storage service",
+            "cloudstorage" => {
+                generic = Some("a cloud storage service".to_string());
+                continue;
+            }
             "box" | "box sync" => "Box",
             "pcloud drive" | "pclouddrive" => "pCloud",
             "nextcloud" => "Nextcloud",
@@ -124,7 +132,7 @@ fn sync_service_by_name(path: &Path) -> Option<String> {
         };
         return Some(service.to_string());
     }
-    None
+    generic
 }
 
 /// Files the sync services leave at the top of the folders they manage.
@@ -347,7 +355,10 @@ mod tests {
         for (path, service) in [
             ("/home/sam/Dropbox/indibudget/indibudget.db", "Dropbox"),
             ("/Users/sam/Dropbox (Personal)/indibudget.db", "Dropbox"),
-            ("/Users/sam/Library/CloudStorage/GoogleDrive-sam@example.com/My Drive/x.db", "a cloud storage service"),
+            ("/Users/sam/Library/CloudStorage/GoogleDrive-sam@example.com/My Drive/x.db", "Google Drive"),
+            ("/Users/sam/Library/CloudStorage/Dropbox/indibudget/x.db", "Dropbox"),
+            ("/Users/sam/Library/CloudStorage/OneDrive-Personal/x.db", "OneDrive"),
+            ("/Users/sam/Library/CloudStorage/SomeNewService/x.db", "a cloud storage service"),
             ("/Users/sam/Library/Mobile Documents/com~apple~CloudDocs/x.db", "iCloud Drive"),
             ("/home/sam/Nextcloud/x.db", "Nextcloud"),
         ] {
@@ -442,8 +453,8 @@ mod tests {
     }
 
     #[test]
-    fn the_refusal_says_where_why_and_what_to_do() {
-        let sentence = refusal(
+    fn the_warning_says_where_why_and_what_to_do() {
+        let sentence = warning(
             Path::new("/home/sam/Dropbox/indibudget/indibudget.db"),
             &Risk::CloudSync { service: "Dropbox".into() },
         );

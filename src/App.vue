@@ -26,6 +26,26 @@ async function openOnTheRightBudget() {
   }
 }
 
+/** Set when the budget is kept on a network drive or in a synced folder. */
+const locationWarning = ref<string | null>(null);
+
+async function checkLocation() {
+  try {
+    locationWarning.value = await api.getLocationWarning();
+  } catch {
+    locationWarning.value = null;
+  }
+}
+
+async function dismissLocationWarning() {
+  locationWarning.value = null;
+  try {
+    await api.dismissLocationWarning();
+  } catch {
+    // Shown again next time, which is the safe way to fail.
+  }
+}
+
 const sidebarOpen = ref(true);
 const showAgreement = ref(false);
 const appReady = ref(false);
@@ -41,7 +61,7 @@ onMounted(async () => {
       showAgreement.value = true;
     } else {
       appReady.value = true;
-      await openOnTheRightBudget();
+      await Promise.all([openOnTheRightBudget(), checkLocation()]);
     }
   } catch {
     showAgreement.value = true;
@@ -51,7 +71,7 @@ onMounted(async () => {
 async function onAgreementAccepted() {
   showAgreement.value = false;
   appReady.value = true;
-  await openOnTheRightBudget();
+  await Promise.all([openOnTheRightBudget(), checkLocation()]);
 }
 
 
@@ -141,6 +161,19 @@ const isActive = (path: string) => route.path === path;
           Nothing here can be shown or saved until you sign in again.
         </span>
         <router-link to="/sharing" class="underline font-medium whitespace-nowrap">Sign in again</router-link>
+      </div>
+      <div
+        v-if="locationWarning"
+        role="alert"
+        class="px-6 py-3 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm flex items-start justify-between gap-4"
+      >
+        <span class="break-words min-w-0">{{ locationWarning }}</span>
+        <button
+          class="shrink-0 px-3 py-1 rounded-md border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50 font-medium"
+          @click="dismissLocationWarning"
+        >
+          Dismiss
+        </button>
       </div>
       <router-view />
     </main>

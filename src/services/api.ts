@@ -1,6 +1,6 @@
 // Every call goes through the one door in lib/rpc, which decides whether it
 // runs against this machine or travels to the computer hosting the budget.
-import { invoke } from '../lib/rpc';
+import { invoke, invokeLocal } from '../lib/rpc';
 import type {
   Account,
   CreateAccountRequest,
@@ -55,6 +55,11 @@ function versioned<R>(request: R, expectedRowVersion?: number) {
 // Initialization
 export const initApp = () => invoke<void>('init_app');
 export const getDatabasePath = () => invoke<string>('get_database_path');
+
+// About where *this* computer keeps its budget, so always asked locally — even
+// while connected to someone else's.
+export const getLocationWarning = () => invokeLocal<string | null>('get_location_warning');
+export const dismissLocationWarning = () => invokeLocal<void>('dismiss_location_warning');
 export const getTransactionCount = () => invoke<number>('get_transaction_count');
 
 // Accounts

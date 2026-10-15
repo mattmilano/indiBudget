@@ -54,10 +54,10 @@ across the home network — no cloud service is involved at any point.
 
 ### Changed
 
-- indiBudget refuses to open its database on a network drive or inside a
+- A dismissable warning when the database is on a network drive or inside a
   folder a sync service (Dropbox, OneDrive, iCloud Drive and others) keeps in
-  step, where it could be corrupted, and explains why. `INDIBUDGET_DATA_DIR`
-  points it at a local folder instead
+  step, where it could be corrupted. `INDIBUDGET_DATA_DIR` points indiBudget
+  at a local folder instead
 - Only one window can have the budget open at a time, so two windows never
   keep separate ideas of who is editing what
 - The database file is brought fully up to date after every change, so a copy
