@@ -191,24 +191,54 @@ pub struct CreateRecurringRequest {
     pub reminder_days: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Deserialises a field that can be left out, set, or set to `null`.
+///
+/// Absent means "leave it alone"; `null` means "clear it". Plain `Option`
+/// cannot tell those apart, which is why an end date, once set, could never
+/// be removed.
+fn set_or_clear<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// An edit to a scheduled transaction. Every field but `id` is optional and
+/// a field left out is left as it was.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateRecurringRequest {
     pub id: String,
+    pub account_id: Option<String>,
+    pub transaction_type: Option<TransactionType>,
     pub amount: Option<Decimal>,
     pub description: Option<String>,
-    pub category_id: Option<String>,
-    pub payee: Option<String>,
+    #[serde(default, deserialize_with = "set_or_clear")]
+    pub category_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "set_or_clear")]
+    pub payee: Option<Option<String>>,
     pub frequency: Option<RecurrenceFrequency>,
-    pub end_date: Option<NaiveDate>,
-    pub day_of_month: Option<i32>,
+    /// When the next one is due. The ones after it follow on from this date.
+    pub next_occurrence: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "set_or_clear")]
+    pub end_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "set_or_clear")]
+    pub day_of_month: Option<Option<i32>>,
     pub auto_post: Option<bool>,
-    pub reminder_days: Option<i32>,
+    #[serde(default, deserialize_with = "set_or_clear")]
+    pub reminder_days: Option<Option<i32>>,
     pub is_active: Option<bool>,
 }
 
 impl UpdateRecurringRequest {
     /// Shared by the local Tauri command and the boundary handler.
     pub fn apply_to(self, recurring: &mut RecurringTransaction) {
+        if let Some(account_id) = self.account_id {
+            recurring.account_id = account_id;
+        }
+        if let Some(transaction_type) = self.transaction_type {
+            recurring.transaction_type = transaction_type;
+        }
         if let Some(amount) = self.amount {
             recurring.amount = amount;
         }
@@ -216,29 +246,57 @@ impl UpdateRecurringRequest {
             recurring.description = description;
         }
         if let Some(category_id) = self.category_id {
-            recurring.category_id = Some(category_id);
+            recurring.category_id = category_id.filter(|c| !c.is_empty());
         }
         if let Some(payee) = self.payee {
-            recurring.payee = Some(payee);
+            recurring.payee = payee.filter(|p| !p.trim().is_empty());
         }
         if let Some(frequency) = self.frequency {
             recurring.frequency = frequency;
         }
+        if let Some(next) = self.next_occurrence {
+            recurring.next_occurrence = next;
+        }
         if let Some(end_date) = self.end_date {
-            recurring.end_date = Some(end_date);
+            recurring.end_date = end_date;
         }
         if let Some(day_of_month) = self.day_of_month {
-            recurring.day_of_month = Some(day_of_month);
+            recurring.day_of_month = day_of_month;
         }
         if let Some(auto_post) = self.auto_post {
             recurring.auto_post = auto_post;
         }
         if let Some(reminder_days) = self.reminder_days {
-            recurring.reminder_days = Some(reminder_days);
+            recurring.reminder_days = reminder_days;
         }
         if let Some(is_active) = self.is_active {
             recurring.is_active = is_active;
         }
+    }
+}
+
+impl RecurringTransaction {
+    /// Whether this schedule makes sense, in the person's words if not.
+    pub fn check(&self) -> Result<(), String> {
+        if self.description.trim().is_empty() {
+            return Err("Give the scheduled transaction a description.".into());
+        }
+        if self.amount <= Decimal::ZERO {
+            return Err("The amount must be more than zero. Choose Expense or Income for the direction.".into());
+        }
+        if let Some(day) = self.day_of_month {
+            if !(1..=31).contains(&day) {
+                return Err("The day of the month must be between 1 and 31.".into());
+            }
+        }
+        if let Some(end) = self.end_date {
+            if self.next_occurrence > end {
+                return Err("The next due date is after the end date, so nothing would ever be due. \
+                            Move the end date later, or clear it."
+                    .into());
+            }
+        }
+        Ok(())
     }
 }
 

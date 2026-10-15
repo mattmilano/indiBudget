@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { useTransactionsStore, useCategoriesStore } from '../stores';
+import { localDate } from '../utils/dates';
 
 const transactionsStore = useTransactionsStore();
 const categoriesStore = useCategoriesStore();
@@ -105,7 +106,7 @@ const formatCurrency = (value: number) => {
 };
 
 const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return localDate(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const getCategoryNames = (categoryIds: Set<string>) => {

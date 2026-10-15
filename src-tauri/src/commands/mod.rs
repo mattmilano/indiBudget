@@ -936,8 +936,9 @@ pub fn update_recurring(
             let id = request.id.clone();
             let mut recurring = repository::get_recurring_by_id(conn, &id)?;
             request.apply_to(&mut recurring);
+            recurring.check().map_err(DatabaseError::InvalidData)?;
             repository::update_recurring(conn, &recurring)?;
-            Ok(recurring)
+            repository::get_recurring_by_id(conn, &id)
         })
     })
 }
@@ -1271,6 +1272,7 @@ pub(crate) fn ops_calendar_events(
                         category_color: category.map(|c| c.color.clone()),
                         is_recurring: tx.recurring_id.is_some(),
                         account_name: account_map.get(&tx.account_id).cloned().unwrap_or_default(),
+                        recurring_id: None,
                     }
                 })
                 .collect();
@@ -1295,6 +1297,7 @@ pub(crate) fn ops_calendar_events(
                                 .get(&r.account_id)
                                 .cloned()
                                 .unwrap_or_default(),
+                            recurring_id: Some(r.id.clone()),
                         });
                     }
 

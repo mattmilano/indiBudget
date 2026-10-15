@@ -240,6 +240,10 @@ pub struct CalendarEvent {
     pub category_color: Option<String>,
     pub is_recurring: bool,
     pub account_name: String,
+    /// Set on a *scheduled* entry — one not yet posted — naming the recurring
+    /// transaction it comes from, so the calendar can open it for editing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurring_id: Option<String>,
 }
 
 /// Request to create a transfer between two accounts.

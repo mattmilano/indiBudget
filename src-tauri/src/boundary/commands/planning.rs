@@ -175,11 +175,15 @@ fn h_update_recurring(ctx: &BoundaryCtx, args: Value) -> Result<Value, BoundaryE
     let request: UpdateRecurringRequest = decode::<Wrapped<_>>(args.clone())?.request;
     guard_version(ctx, &args, Stamped::RecurringTransactions, "recurring payment", &request.id)?;
     let id = request.id.clone();
-    ctx.db.with_connection(|conn| {
-        let mut recurring = repository::get_recurring_by_id(conn, &id)?;
-        request.apply_to(&mut recurring);
-        repository::update_recurring(conn, &recurring)
-    }).map_err(db_err)?;
+    let mut recurring = ctx
+        .db
+        .with_connection(|conn| repository::get_recurring_by_id(conn, &id))
+        .map_err(|_| BoundaryError::invalid("That scheduled transaction has been deleted."))?;
+    request.apply_to(&mut recurring);
+    recurring.check().map_err(BoundaryError::invalid)?;
+    ctx.db
+        .with_connection(|conn| repository::update_recurring(conn, &recurring))
+        .map_err(db_err)?;
     after_write(ctx, Written { table: Stamped::RecurringTransactions, area: Area::Planning,
         record_kind: "recurring", id: &id, is_new: false, leasable: None })?;
     ok(settled(ctx, |c| repository::get_recurring_by_id(c, &id))?)

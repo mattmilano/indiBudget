@@ -20,6 +20,7 @@ import { useAccountsStore } from '../stores';
 import type { SpendingByCategory, MonthlyTrend, CashFlowReport } from '../types';
 import { format, subMonths, subYears, startOfMonth, endOfMonth } from 'date-fns';
 import { parseMoney, sumMoney, percentage, toNumber } from '../utils/money';
+import { localDate } from '../utils/dates';
 
 ChartJS.register(
   ArcElement,
@@ -199,7 +200,7 @@ const netChartData = computed(() => ({
 
 // Net worth history chart data
 const netWorthChartData = computed(() => ({
-  labels: netWorthHistory.value.map(h => format(new Date(h.date), 'MMM d')),
+  labels: netWorthHistory.value.map(h => format(localDate(h.date), 'MMM d')),
   datasets: [
     {
       label: 'Net Worth',

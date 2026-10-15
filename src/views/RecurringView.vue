@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue';
 import * as api from '../services/api';
 import { useAccountsStore, useCategoriesStore } from '../stores';
+import RecurringEditModal from '../components/RecurringEditModal.vue';
+import { localDate } from '../utils/dates';
 import type { RecurringTransaction, DetectedRecurring, CreateRecurringRequest, SavingsSummary } from '../types';
 
 const accountsStore = useAccountsStore();
@@ -17,6 +19,8 @@ const showDetectedModal = ref(false);
 const showCancelModal = ref(false);
 const cancellingItem = ref<RecurringTransaction | null>(null);
 const cancelReason = ref('');
+/** The schedule open for editing. */
+const editingId = ref<string | null>(null);
 
 const newRecurring = ref<CreateRecurringRequest>({
   account_id: '',
@@ -93,7 +97,13 @@ async function createRecurring() {
     return;
   }
   try {
-    await api.createRecurring(newRecurring.value);
+    // Monthly schedules fall on a fixed day. Without it, a bill made on the
+    // 31st drifts to the 30th after a short month and stays there.
+    const request = { ...newRecurring.value };
+    if (request.frequency === 'monthly' && request.day_of_month === undefined) {
+      request.day_of_month = Number(request.start_date.slice(8, 10));
+    }
+    await api.createRecurring(request);
     showAddModal.value = false;
     newRecurring.value = {
       account_id: accountsStore.accounts[0]?.id || '',
@@ -153,7 +163,7 @@ function formatFrequency(freq: string): string {
 }
 
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString();
+  return localDate(date).toLocaleDateString();
 }
 
 function getAccountName(id: string): string {
@@ -301,7 +311,14 @@ function calculateYearlySavings(amount: string, frequency: string): string {
             <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
               {{ getAccountName(item.account_id) }}
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button
+                @click="editingId = item.id"
+                class="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                title="Edit this scheduled transaction"
+              >
+                Edit
+              </button>
               <button
                 @click="openCancelModal(item)"
                 class="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20 rounded-lg transition-colors"
@@ -326,6 +343,12 @@ function calculateYearlySavings(amount: string, frequency: string): string {
         or add them manually.
       </p>
     </div>
+
+    <RecurringEditModal
+      :recurring-id="editingId"
+      @close="editingId = null"
+      @saved="fetchRecurring"
+    />
 
     <!-- Cancel Subscription Modal -->
     <div v-if="showCancelModal && cancellingItem" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

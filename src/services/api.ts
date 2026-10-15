@@ -15,6 +15,7 @@ import type {
   CreateBudgetRequest,
   BudgetStatus,
   RecurringTransaction,
+  UpdateRecurringRequest,
   CreateRecurringRequest,
   UpcomingRecurring,
   DetectedRecurring,
@@ -271,7 +272,7 @@ export const getRecurringById = (id: string) =>
   invoke<RecurringTransaction>('get_recurring_by_id', { id });
 
 export const updateRecurring = (
-  request: Partial<RecurringTransaction> & { id: string },
+  request: UpdateRecurringRequest,
   expectedRowVersion?: number
 ) => invoke<RecurringTransaction>('update_recurring', versioned(request, expectedRowVersion));
 

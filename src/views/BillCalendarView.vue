@@ -7,6 +7,7 @@ import listPlugin from '@fullcalendar/list';
 import { format, startOfMonth, endOfMonth, parseISO, isSameDay, isSameMonth } from 'date-fns';
 import { useCalendarStore, useCategoriesStore } from '../stores';
 import * as api from '../services/api';
+import RecurringEditModal from '../components/RecurringEditModal.vue';
 import type { UpcomingRecurring, BillReminder, CalendarEvent } from '../types';
 
 const calendarStore = useCalendarStore();
@@ -17,6 +18,23 @@ const currentMonth = ref(new Date());
 const upcomingRecurring = ref<UpcomingRecurring[]>([]);
 const billReminders = ref<BillReminder[]>([]);
 const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null);
+
+/** The scheduled transaction open for editing. */
+const editingRecurringId = ref<string | null>(null);
+
+function editScheduled(recurringId: string) {
+  showEventModal.value = false;
+  editingRecurringId.value = recurringId;
+}
+
+/** Re-read the month on screen, so an edited schedule shows where it now falls. */
+async function refreshAfterEdit() {
+  const view = calendarRef.value?.getApi().view;
+  const start = format(view?.activeStart ?? startOfMonth(currentMonth.value), 'yyyy-MM-dd');
+  const end = format(view?.activeEnd ?? endOfMonth(currentMonth.value), 'yyyy-MM-dd');
+  await Promise.all([calendarStore.fetchCalendarEvents(start, end), fetchBillData()]);
+  updateCalendarEvents();
+}
 
 // Modal state
 const showEventModal = ref(false);
@@ -262,6 +280,7 @@ function handleDateClick(info: any) {
       category_name: item.category_name,
       account_name: item.account_name,
       is_recurring: true,
+      recurring_id: item.recurring.id,
     } as CalendarEvent));
   }
   showEventModal.value = selectedEvents.value.length > 0;
@@ -294,6 +313,7 @@ function handleEventClick(info: any) {
       category_name: item.category_name,
       account_name: item.account_name,
       is_recurring: true,
+      recurring_id: item.recurring.id,
     } as CalendarEvent));
   }
   showEventModal.value = true;
@@ -551,6 +571,12 @@ onMounted(fetchData);
                     <span v-else-if="bill.days_until === 1">Tomorrow</span>
                     <span v-else>{{ bill.days_until }} days</span>
                   </p>
+                  <button
+                    class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    @click="editScheduled(bill.recurring.id)"
+                  >
+                    Edit
+                  </button>
                 </div>
               </div>
             </div>
@@ -612,14 +638,23 @@ onMounted(fetchData);
                   </p>
                   <p class="text-xs text-gray-400">{{ event.account_name }}</p>
                 </div>
-                <p
-                  :class="[
-                    'font-bold text-lg',
-                    event.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
-                  ]"
-                >
-                  {{ event.transaction_type === 'income' ? '+' : '-' }}{{ formatCurrency(event.amount) }}
-                </p>
+                <div class="text-right">
+                  <p
+                    :class="[
+                      'font-bold text-lg',
+                      event.transaction_type === 'income' ? 'text-green-600' : 'text-red-600'
+                    ]"
+                  >
+                    {{ event.transaction_type === 'income' ? '+' : '-' }}{{ formatCurrency(event.amount) }}
+                  </p>
+                  <button
+                    v-if="event.recurring_id"
+                    class="mt-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    @click="editScheduled(event.recurring_id)"
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -641,6 +676,12 @@ onMounted(fetchData);
         </div>
       </div>
     </div>
+
+    <RecurringEditModal
+      :recurring-id="editingRecurringId"
+      @close="editingRecurringId = null"
+      @saved="refreshAfterEdit"
+    />
 
     <!-- Loading Overlay -->
     <div

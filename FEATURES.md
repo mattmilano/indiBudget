@@ -38,6 +38,7 @@
 
 ## Recurring Transactions & Subscription Management
 - Track recurring bills and income across six frequencies
+- **Edit any scheduled transaction in place** — amount, account, category, frequency, next due date or end date — from the Recurring page or straight from the calendar
 - **Automatic pattern detection** that finds recurring charges in your history with a **confidence score**
 - **Subscription cancellation tracking** that calculates your **estimated yearly savings**
 - Savings dashboard showing total monthly and annual savings from cancelled subscriptions

@@ -193,6 +193,27 @@ export interface RecurringTransaction {
   row_version: number;
 }
 
+/**
+ * An edit to a scheduled transaction. Fields left out are left as they were;
+ * `null` clears an optional one.
+ */
+export interface UpdateRecurringRequest {
+  id: string;
+  account_id?: string;
+  transaction_type?: TransactionType;
+  amount?: string;
+  description?: string;
+  category_id?: string | null;
+  payee?: string | null;
+  frequency?: RecurrenceFrequency;
+  next_occurrence?: string;
+  end_date?: string | null;
+  day_of_month?: number | null;
+  auto_post?: boolean;
+  reminder_days?: number | null;
+  is_active?: boolean;
+}
+
 export interface CreateRecurringRequest {
   account_id: string;
   transaction_type: TransactionType;
@@ -259,6 +280,8 @@ export interface CalendarEvent {
   category_color?: string;
   is_recurring: boolean;
   account_name: string;
+  /** On a scheduled entry not yet posted: the recurring transaction it comes from. */
+  recurring_id?: string;
 }
 
 export interface ImportMapping {

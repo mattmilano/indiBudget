@@ -45,6 +45,10 @@ across the home network — no cloud service is involved at any point.
 
 **Other features**
 
+- Editing scheduled (recurring) transactions in place — description, amount,
+  expense or income, account, category, payee, frequency, next due date and
+  end date — from the Recurring page or straight from the calendar, rather
+  than deleting and recreating them
 - Editing and deleting budgets from the Budgets screen
 - Subcategories, organising categories into parent and child groups
 - A daily frequency for recurring transactions
@@ -82,6 +86,10 @@ across the home network — no cloud service is involved at any point.
   transaction a second time
 - Recording a goal contribution added it in place of the amount already saved,
   rather than on top of it
+- Dates such as "Next Due" showed the day before in time zones west of
+  Greenwich, including all of the Americas
+- A monthly bill set up on the 29th, 30th or 31st no longer drifts to an
+  earlier day after a short month
 - Import no longer reports a false duplicate for legitimately similar
   transactions
 - Backup import correctly reports real errors rather than silently skipping

@@ -326,12 +326,18 @@ import Icon from '@components/Icon.astro';
         <h3>Setting Up Recurring Transactions</h3>
         <ol>
           <li>Click <strong>Add Recurring</strong></li>
-          <li>Select an account and transaction type (income/expense)</li>
-          <li>Enter amount, description, category, and payee</li>
+          <li>Enter a description and amount, and choose Expense or Income</li>
           <li>Choose frequency: Daily, Weekly, Bi-weekly, Monthly, Quarterly, or Yearly</li>
-          <li>Set the start date and optional end date</li>
-          <li>Configure reminder days before due date</li>
+          <li>Set the date of the first one and the account it comes from or goes to</li>
         </ol>
+        <p>A monthly one falls on the same day each month as the first, so a bill on the 31st comes on the last day of shorter months and goes back to the 31st after them. Add a category, payee or end date by editing it afterwards.</p>
+        <h3>Editing a Scheduled Transaction</h3>
+        <p>Click <strong>Edit</strong> next to it on the Recurring page, or in the <strong>Calendar</strong>: click the day it falls on, or use the Upcoming Bills list, and click <strong>Edit</strong>. You can change any part of it — description, amount, expense or income, account, category, payee, frequency, the next due date, and when it ends — without deleting it and starting again.</p>
+        <ul>
+          <li><strong>Next due</strong> moves the next one, and the ones after it follow on from the new date. For a monthly bill, changing the date to the 20th makes it due on the 20th every month from then on.</li>
+          <li><strong>Ends</strong> is optional. Click <strong>No end date</strong> to have it carry on indefinitely.</li>
+          <li>Transactions already posted are not changed. Edit those from the Transactions page.</li>
+        </ul>
         <h3>Auto-Detection</h3>
         <p>indiBudget can automatically detect recurring patterns in your transaction history. Each detected pattern includes a confidence score to help you decide which to track.</p>
         <h3>Subscription Management</h3>
