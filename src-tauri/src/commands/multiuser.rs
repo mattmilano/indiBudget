@@ -42,6 +42,8 @@ pub struct MultiUser {
     state: Mutex<Option<Arc<HostState>>>,
     client: Mutex<Option<Client>>,
     connected_as: Mutex<Option<String>>,
+    /// The name of the computer hosting the budget this one is signed in to.
+    connected_to: Mutex<Option<String>>,
     /// Set when the connection to a host failed partway through.
     ///
     /// While set, requests for budget data are refused rather than answered
@@ -234,6 +236,9 @@ pub struct HostingStatus {
     pub pairing: bool,
     pub connected: bool,
     pub signed_in_as: Option<String>,
+    /// While connected: the hosting computer's name, or its address when the
+    /// host did not say.
+    pub connected_to: Option<String>,
     /// The host this computer joined, if it has paired with one.
     pub saved_host: Option<SavedHostView>,
     /// The connection to the host dropped and has not been re-established.
@@ -276,6 +281,7 @@ pub fn status_of(state: &AppState) -> HostingStatus {
     // exactly what reading `lost` twice did.
     let connected = lock(&state.multi_user.client).is_some();
     let signed_in_as = lock(&state.multi_user.connected_as).clone();
+    let connected_to = lock(&state.multi_user.connected_to).clone();
     let lost_reason = lock(&state.multi_user.lost).clone();
 
     HostingStatus {
@@ -287,6 +293,7 @@ pub fn status_of(state: &AppState) -> HostingStatus {
         pairing,
         connected,
         signed_in_as,
+        connected_to,
         saved_host,
         lost: lost_reason.is_some(),
         lost_reason,
@@ -523,6 +530,12 @@ pub fn connect_on(state: &AppState, request: ConnectRequest) -> Result<HostingSt
     *lock(&state.multi_user.client) = Some(client);
     *lock(&state.multi_user.watcher) = watcher;
     *lock(&state.multi_user.connected_as) = Some(session.display_name);
+    *lock(&state.multi_user.connected_to) = Some(
+        session
+            .host_computer
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| saved.address.clone()),
+    );
     *lock(&state.multi_user.lost) = None;
     Ok(status_of(state))
 }
@@ -540,6 +553,7 @@ pub fn disconnect_on(state: &AppState) -> HostingStatus {
     drop(watcher);
     *lock(&state.multi_user.client) = None;
     *lock(&state.multi_user.connected_as) = None;
+    *lock(&state.multi_user.connected_to) = None;
     *lock(&state.multi_user.lost) = None;
     status_of(state)
 }
@@ -616,6 +630,7 @@ pub fn invoke_on(
                 let watcher = lock(&state.multi_user.watcher).take();
                 drop(watcher);
                 *lock(&state.multi_user.connected_as) = None;
+                *lock(&state.multi_user.connected_to) = None;
                 let reason = result
                     .as_ref()
                     .err()

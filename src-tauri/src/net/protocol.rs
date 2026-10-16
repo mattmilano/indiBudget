@@ -56,6 +56,10 @@ pub enum ServerMessage {
         /// worthless once the session ends.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         watch_ticket: Option<String>,
+        /// The hosting computer's name, so the joining window can say whose
+        /// budget it is working in.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        host_computer: Option<String>,
     },
     /// A `Watch` was accepted; nudges follow.
     Watching,
@@ -142,6 +146,7 @@ mod tests {
                 display_name: "Alex".into(),
                 is_owner: false,
                 watch_ticket: Some("ticket".into()),
+                host_computer: Some("STUDY-DESKTOP".into()),
             },
             ServerMessage::Watching,
             ServerMessage::Nudge {
@@ -169,6 +174,7 @@ mod tests {
             display_name: "Alex".into(),
             is_owner: false,
             watch_ticket: None,
+            host_computer: None,
         })
         .unwrap();
         assert!(!encoded.contains("password"));

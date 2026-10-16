@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import UserAgreementModal from './components/UserAgreementModal.vue';
 import { navItems } from './navigation';
@@ -45,6 +45,72 @@ async function dismissLocationWarning() {
     // Shown again next time, which is the safe way to fail.
   }
 }
+
+// ---- who else is in this budget
+
+/** Bumped to remount the screen, so it re-reads from whichever budget is now attached. */
+const viewKey = ref(0);
+
+/** "Jess on Jess's MacBook Air", or a list of them. */
+const othersHere = computed(() => {
+  const seats = sharing.status.connected_people;
+  const names = seats.map((s) => `${s.person} on ${s.computer}`);
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+});
+
+const banner = computed<'joined' | 'hosting' | null>(() => {
+  if (sharing.status.connected) return 'joined';
+  if (sharing.status.hosting && sharing.status.connected_people.length) return 'hosting';
+  return null;
+});
+
+const leaving = ref(false);
+
+async function disconnectFromBanner() {
+  leaving.value = true;
+  try {
+    if (banner.value === 'joined') {
+      await sharing.disconnect();
+      // The screen was showing the host's budget; show this computer's own.
+      viewKey.value += 1;
+    } else if (banner.value === 'hosting') {
+      const who = sharing.status.connected_people.length === 1 ? sharing.status.connected_people[0].person : 'everyone';
+      if (
+        !window.confirm(
+          `Disconnect ${who} and stop hosting? Nobody can join this budget again until you start hosting from Sharing.`
+        )
+      ) {
+        return;
+      }
+      await sharing.stopHosting();
+    }
+  } catch {
+    // The Sharing screen says what went wrong; here, just try the status again.
+    await sharing.refreshStatus().catch(() => {});
+  } finally {
+    leaving.value = false;
+  }
+}
+
+// While hosting, who is connected changes without any news to say so — a
+// laptop joining or closing its lid — so ask every few seconds. Local and cheap.
+let hostingTimer: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => sharing.status.hosting,
+  (hosting) => {
+    if (hosting && !hostingTimer) {
+      hostingTimer = setInterval(() => sharing.refreshStatus().catch(() => {}), 5000);
+    } else if (!hosting && hostingTimer) {
+      clearInterval(hostingTimer);
+      hostingTimer = null;
+    }
+  },
+  { immediate: true }
+);
+onBeforeUnmount(() => {
+  if (hostingTimer) clearInterval(hostingTimer);
+});
 
 const sidebarOpen = ref(true);
 const showAgreement = ref(false);
@@ -153,6 +219,26 @@ const isActive = (path: string) => route.path === path;
       ]"
     >
       <div
+        v-if="banner"
+        role="status"
+        class="px-6 py-1.5 bg-blue-600 dark:bg-blue-700 text-white text-xs flex items-center justify-between gap-4"
+      >
+        <span v-if="banner === 'joined'" class="min-w-0 truncate">
+          Working in the budget on <strong>{{ sharing.status.connected_to ?? 'another computer' }}</strong>,
+          signed in as <strong>{{ sharing.status.signed_in_as }}</strong>.
+        </span>
+        <span v-else class="min-w-0 truncate">
+          {{ othersHere }} {{ sharing.status.connected_people.length === 1 ? 'is' : 'are' }} also working in this budget.
+        </span>
+        <button
+          :disabled="leaving"
+          class="shrink-0 px-2 py-0.5 rounded border border-white/40 hover:bg-white/15 font-medium disabled:opacity-50"
+          @click="disconnectFromBanner"
+        >
+          {{ banner === 'joined' ? 'Disconnect' : 'Disconnect everyone' }}
+        </button>
+      </div>
+      <div
         v-if="sharing.status.lost && route.path !== '/sharing'"
         class="px-6 py-3 bg-red-600 text-white text-sm flex items-center justify-between gap-4"
       >
@@ -175,7 +261,7 @@ const isActive = (path: string) => route.path === path;
           Dismiss
         </button>
       </div>
-      <router-view />
+      <router-view :key="viewKey" />
     </main>
   </div>
 </template>

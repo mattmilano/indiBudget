@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useMultiUserStore, type FoundHost } from '../stores/multiuser';
 import * as api from '../services/api';
 
@@ -37,23 +37,7 @@ async function lookForHosts() {
   }
 }
 
-// While hosting, who is connected changes without any news to say so.
-let statusTimer: ReturnType<typeof setInterval> | null = null;
-watch(
-  () => store.status.hosting,
-  (hosting) => {
-    if (hosting && !statusTimer) {
-      statusTimer = setInterval(() => store.refreshStatus().catch(() => {}), 5000);
-    } else if (!hosting && statusTimer) {
-      clearInterval(statusTimer);
-      statusTimer = null;
-    }
-  },
-  { immediate: true }
-);
-onBeforeUnmount(() => {
-  if (statusTimer) clearInterval(statusTimer);
-});
+// Who is connected is kept fresh while hosting by App.vue, for the banner.
 
 function since(iso: string) {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

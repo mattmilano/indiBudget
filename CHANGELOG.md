@@ -27,7 +27,9 @@ across the home network — no cloud service is involved at any point.
 - Finding the host on your network automatically, rather than typing its
   address (typing it still works where the network does not pass the
   announcements on)
-- A list of who is connected right now, by person and computer
+- A list of who is connected right now, by person and computer, and a slim
+  blue bar across the top of the window naming the host (when joined) or
+  whoever is connected (when hosting), with a button to disconnect
 - Live updates: the host tells every connected computer the moment something
   changes, so it appears on the others almost at once. A five-second check
   runs underneath in case that message is lost

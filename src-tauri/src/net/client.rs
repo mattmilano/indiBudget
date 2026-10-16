@@ -341,10 +341,12 @@ impl Client {
                 display_name,
                 is_owner,
                 watch_ticket,
+                host_computer,
             } => Ok(SignedIn {
                 display_name,
                 is_owner,
                 watch_ticket,
+                host_computer,
             }),
             ServerMessage::Refused {
                 sentence,
@@ -384,6 +386,8 @@ pub struct SignedIn {
     /// Opens one nudge connection; see [`Watcher`]. Absent from a host too old
     /// to push, which leaves the five-second beat to do the work alone.
     pub watch_ticket: Option<String>,
+    /// The hosting computer's name, if the host said.
+    pub host_computer: Option<String>,
 }
 
 /// How long the nudge connection waits to hear anything before deciding the

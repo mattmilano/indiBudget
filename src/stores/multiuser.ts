@@ -29,6 +29,8 @@ export interface HostingStatus {
   pairing: boolean;
   connected: boolean;
   signed_in_as: string | null;
+  /** While connected: the hosting computer's name, or its address. */
+  connected_to: string | null;
   /** The host this computer paired with, remembered across restarts. */
   saved_host: SavedHost | null;
   /** The connection to the host dropped and has not been re-established. */
@@ -96,6 +98,7 @@ export const useMultiUserStore = defineStore('multiuser', () => {
     pairing: false,
     connected: false,
     signed_in_as: null,
+    connected_to: null,
     saved_host: null,
     lost: false,
     lost_reason: null,

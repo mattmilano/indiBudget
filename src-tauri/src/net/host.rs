@@ -623,6 +623,7 @@ fn handle_message(
                     display_name: signed_in.display_name.clone(),
                     is_owner: signed_in.is_owner,
                     watch_ticket: Some(state.issue_ticket(seat)),
+                    host_computer: Some(super::discovery::computer_name()),
                 };
                 *session = Some(Session {
                     user_id: signed_in.user_id.clone(),

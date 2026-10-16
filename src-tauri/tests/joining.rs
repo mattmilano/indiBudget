@@ -145,7 +145,11 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
 
     // ---- sign in; data now comes from the host, not this computer
     sign_in(&laptop, None).expect("sign in");
-    assert!(status_of(&laptop).connected);
+    let status = status_of(&laptop);
+    assert!(status.connected);
+    let host_name = status.connected_to.expect("the host's name, for the banner");
+    assert!(!host_name.is_empty());
+    assert_eq!(host_name, indibudget_lib::net::discovery::computer_name(), "it is this computer here");
     assert_eq!(account_names(&laptop).unwrap(), vec!["Joint Checking"]);
 
     // ---- restart the app: only a sign-in is needed, and no new pairing
@@ -221,6 +225,7 @@ fn a_joining_computer_pairs_once_and_remembers_the_host() {
     // Disconnecting deliberately returns to this computer's own budget.
     disconnect_on(&laptop);
     assert!(!status_of(&laptop).lost);
+    assert!(status_of(&laptop).connected_to.is_none());
     assert!(account_names(&laptop).unwrap().is_empty(), "this computer's own, empty budget");
 
     // ---- while hosting, changes nudge this computer's own window
