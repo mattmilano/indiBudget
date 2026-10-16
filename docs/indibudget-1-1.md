@@ -103,7 +103,7 @@ indiBudget has no account to create and no server of ours for your information t
 
 If you'd like a lock on it too, turn on **AES-256-GCM encryption** for the data on disk, protected by a password run through Argon2id. Take a full backup whenever you like, and indiBudget will remind you if it's been a while.
 
-We spent the last stretch before this release on the details that decide whether you trust software with your money:
+We've spent a lot of our time on the details that decide whether you trust software with your money:
 
 - **Money adds up exactly.** Amounts are handled as exact decimals from end to end, so a cent never goes missing to rounding.
 - **Dates mean the day they say.** A bill due on the 20th shows on the 20th, wherever in the world you are.
@@ -121,18 +121,13 @@ Version 1.0 went out quietly, without an announcement. If you've been running it
 
 - **Sharing a budget across computers**, with everything above: pairing, finding the host automatically, per-person logins and access, the People screen, named edit protection, live updates, the connection bar, and maintenance mode.
 - **Editing scheduled transactions in place**, from the Recurring page or straight from the calendar, instead of deleting and recreating them.
-- **Editing and deleting budgets.**
-- **Subcategories.**
-- **A daily frequency** for recurring transactions.
-- **Balances derived from transactions** and **exact decimal money** throughout.
 - **Fixes**, including:
   - saving an account no longer shifts its balance
   - a goal contribution now adds to what's saved instead of replacing it
   - dates no longer show a day early in the Americas
   - monthly bills on the 29th to 31st no longer drift
-  - import no longer flags legitimately similar transactions as duplicates
 - **The risky-location warning**, **one window at a time**, and **a complete budget file** after every change.
-- **Security hardening:** protection against path tricks in file operations, a content security policy, sign-in throttling, and every known vulnerability in third-party packages resolved.
+- **Security:** encrypted, identity-pinned connections for sharing, the pairing key kept in your system's keychain, sign-in throttling, and every known vulnerability in third-party packages resolved.
 
 The full list is in the [changelog](https://github.com/mattmilano/indiBudget/blob/v1.1.0/CHANGELOG.md).
 

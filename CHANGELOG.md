@@ -51,12 +51,8 @@ across the home network — no cloud service is involved at any point.
   expense or income, account, category, payee, frequency, next due date and
   end date — from the Recurring page or straight from the calendar, rather
   than deleting and recreating them
-- Editing and deleting budgets from the Budgets screen
-- Subcategories, organising categories into parent and child groups
-- A daily frequency for recurring transactions
-- A user agreement shown on first run, with the terms the application is
-  distributed under
-- Sample data for screenshots and trying the app out, in `sample-data/`
+- An MIT `LICENSE` file, and a user agreement that covers only the distributed
+  application, not the source code
 
 ### Changed
 
@@ -68,13 +64,6 @@ across the home network — no cloud service is involved at any point.
   keep separate ideas of who is editing what
 - The database file is brought fully up to date after every change, so a copy
   taken by hand is always complete
-- Account balances are now derived from the opening balance plus every
-  transaction, rather than stored and updated. A balance can no longer drift out
-  of step with the transactions behind it
-- Money is handled with decimal arithmetic end to end, on both sides of the
-  application, removing the rounding error that floating point introduces
-- SimpleFIN credentials moved from browser storage into the application
-  database
 - Moved to Tailwind CSS 4. Screens look the same apart from a slightly more
   vivid colour palette, most noticeably in reds
 - Privacy wording throughout now describes what sharing actually does: your data
@@ -92,16 +81,9 @@ across the home network — no cloud service is involved at any point.
   Greenwich, including all of the Americas
 - A monthly bill set up on the 29th, 30th or 31st no longer drifts to an
   earlier day after a short month
-- Import no longer reports a false duplicate for legitimately similar
-  transactions
-- Backup import correctly reports real errors rather than silently skipping
-- Several create and update operations that did not match their request shape
-- Dependency vulnerabilities, and debug logging left in release builds
 
 ### Security
 
-- Path-traversal protection on all file operations
-- Content Security Policy to guard against script injection
 - Sharing traffic is encrypted in transit, and each computer refuses to connect
   if the host's identity ever changes
 - The key that proves a computer was paired is kept in the operating system's
@@ -114,5 +96,53 @@ across the home network — no cloud service is involved at any point.
   their own account
 - All known vulnerabilities in third-party packages resolved; `npm audit`
   reports none
+
+## [1.0.0] — late June or early July 2026
+
+The first release, published quietly without an announcement. The exact date
+was not recorded.
+
+### Added
+
+- **Bill Calendar** in month and list views, showing actual transactions or
+  upcoming bills, with daily summaries, monthly expected income and expenses,
+  and a 30-day upcoming-bills list
+- **Dashboard** with net worth and its 7- and 30-day change, account balances,
+  budget status, upcoming bills, recent activity and goal progress
+- **Accounts** of seven types in twelve currencies, with net worth that treats
+  credit cards and loans as liabilities, linked transfers between accounts,
+  and statement reconciliation
+- **Transactions** with a pending, cleared, reconciled and void workflow, split
+  transactions, full-text search and filtering, and CSV export
+- **Budgets** over five periods with optional rollover, templates (50/30/20,
+  zero-based, minimalist and family), and editing and deleting
+- **Categories**: over 35 built in plus your own, with subcategories, an
+  auto-categorisation engine recognising hundreds of merchants, text and
+  regular-expression rules, and batch categorisation by keyword
+- **Recurring transactions** daily, weekly, every two weeks, monthly, quarterly
+  or yearly, with detection of recurring charges in your history and a running
+  total of what cancelled subscriptions save
+- **Savings goals** of five types, with the monthly amount needed to stay on pace
+- **Reports**: net worth and its history, cash flow, spending by category,
+  income against expenses, monthly trends, savings rate and year-over-year
+  comparison, exported to PDF or CSV
+- **Import** from CSV, Excel, OFX, QFX and QIF with duplicate detection and an
+  import history, and optional **SimpleFIN** bank sync
+- **Payee analytics**, native bill **notifications**, full JSON **backup and
+  restore** with reminders, and light, dark and system **themes**
+- Optional **AES-256-GCM encryption** of data at rest, with Argon2id key
+  derivation
+- Balances derived from the opening balance plus every transaction, rather
+  than stored and updated, so a balance cannot drift out of step, and money
+  handled with exact decimal arithmetic end to end
+- A user agreement shown on first run, and sample data for screenshots and
+  trying the app out, in `sample-data/`
+
+### Security
+
+- SimpleFIN credentials are kept in the application database rather than
+  browser storage
+- Path-traversal protection on all file operations, and a Content Security
+  Policy to guard against script injection
 
 [1.1.0]: https://github.com/mattmilano/indiBudget/releases/tag/v1.1.0
