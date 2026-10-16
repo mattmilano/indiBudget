@@ -146,3 +146,4 @@ was not recorded.
   Policy to guard against script injection
 
 [1.1.0]: https://github.com/mattmilano/indiBudget/releases/tag/v1.1.0
+[1.0.0]: https://github.com/mattmilano/indiBudget/releases/tag/v1.0.0
