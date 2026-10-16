@@ -7,8 +7,8 @@ the format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.1.0] — 2026-09-21
 
-The first public release. Version 1.0.0 was built and used during development but
-never published, so everything here is new to anyone installing indiBudget.
+The first release to be announced. Version 1.0.0 was released quietly, without
+an announcement; the changes below are what 1.1.0 adds to it.
 
 ### Added
 

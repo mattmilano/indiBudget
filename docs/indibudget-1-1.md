@@ -117,7 +117,7 @@ Light, dark, or follow your system. Your currency and your date format.
 
 ## New in 1.1
 
-If you've been running an earlier build, here's what 1.1 brings:
+Version 1.0 went out quietly, without an announcement. If you've been running it, here's what 1.1 brings:
 
 - **Sharing a budget across computers**, with everything above: pairing, finding the host automatically, per-person logins and access, the People screen, named edit protection, live updates, the connection bar, and maintenance mode.
 - **Editing scheduled transactions in place**, from the Recurring page or straight from the calendar, instead of deleting and recreating them.
